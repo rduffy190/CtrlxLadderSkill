@@ -45,6 +45,12 @@ Put the source in `.st` files with the `END_...` keywords, as codesys-st describ
 3. For a sequence, test it in the scan simulator, `scripts/ld_sim.py`. It reads enums, constants and initial values from the XML, runs the networks scan by scan with timers, and lets a script set inputs and assert on any variable. `references/examples/traffic_light/test_traffic.py` is a full test plan written that way; copy its shape. Validate against the PLCopen schema with codesys-st's `scripts/validate_plcopen.py`.
 4. Hand over the XML (Project → Import PLCopenXML…) with the ladder text, which is the readable form of the rungs, and list the build's warnings.
 
+## ctrlX library and motion lookups
+
+The library and motion references are shared with codesys-st, not copied. They're the same Rexroth manuals, in `<codesys-st-dir>/references/libs/` and `<codesys-st-dir>/references/motion/`. Look things up exactly as codesys-st's **ctrlX library lookups** and **Motion** sections describe: find the name in that folder's `INDEX.md`, then grep the file for its heading and read only that section.
+
+In ladder, the lookup gives you the pins of an FB call. Every library FB except a timer runs on EN/ENO with its pins named, so take the input, `VAR_IN_OUT` and output names from the interface table and wire them all with `PIN := expr` / `PIN => var`, e.g. `-> fbPower:MC_Power(Enable := _bPowerCmd, Axis := stAxis1, Status => bPowered)`. The compiler only knows the pin lists of IEC standard FBs and of FBs in the files you build. For library FBs it can't check pin names or order, and it leaves out the `inputparamtypes` entry. So copy the names from the reference exactly, in the order the table lists them.
+
 ## Reference material
 
 - `references/exports/codesys_v35sp15_ladder.xml`: a real CODESYS V3.5 SP15 LD export (from the public ascii-ladder project on CODESYS Forge, Unlicense). It shows networks, labels, set/reset coils, parallel branches and FB boxes. Use it with `ld_trace.py` to see how the editor writes a construct.
