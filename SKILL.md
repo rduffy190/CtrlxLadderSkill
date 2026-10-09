@@ -54,6 +54,6 @@ In ladder, the lookup gives you the pins of an FB call. Every library FB except 
 ## Reference material
 
 - `references/exports/codesys_v35sp15_ladder.xml`: a real CODESYS V3.5 SP15 LD export (from the public ascii-ladder project on CODESYS Forge, Unlicense). It shows networks, labels, set/reset coils, parallel branches and FB boxes. Use it with `ld_trace.py` to see how the editor writes a construct.
-- `tests/run.sh`: rebuilds every example and the feature test (`tests/features/`), validates them, runs the tracer check and the traffic-light test plan. Run it after changing `ladder.py`.
+- `tests/run.sh`: rebuilds every example and the feature test (`tests/features/`), validates them, runs the tracer check, the traffic-light test plan and a simulator check of declaration forms (`FB_SimDecl`). Run it after changing `ladder.py` or `ld_sim.py`.
 
 When the editor shows something different from what was intended, ask the user for a small export of the same construct from ctrlX PLC Engineering and match it. `ld_trace.py` reads exports too.

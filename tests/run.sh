@@ -20,8 +20,17 @@ build() {   # build <name> <dir> <files...>
     fi
 }
 
-build features "$LAD/tests/features" FB_Valve.st GVL_IO.st PRG_Conveyor.st
+build features "$LAD/tests/features" FB_Valve.st GVL_IO.st PRG_Conveyor.st FB_SimDecl.st
 build cycle "$LAD/references/examples" E_CycleState.st FB_CycleLD.st
 build traffic "$LAD/references/examples/traffic_light" E_TrafficState.st GVL_IO.st FB_TrafficLight.st PRG_Traffic.st
 python3 "$LAD/references/examples/traffic_light/test_traffic.py" "$OUT/traffic.xml"
+python3 - "$LAD/scripts" "$OUT/features.xml" <<'PY'
+import sys; sys.path.insert(0, sys.argv[1])
+from ld_sim import Sim
+s = Sim(sys.argv[2], "FB_SimDecl")
+s.run(10, wLevel=0x100); hi = s.v["bAbove"]
+s.run(10, wLevel=0xFF); lo = s.v["bAbove"]
+assert s.consts["LIMIT"] == 255 and hi and not lo, (s.consts, hi, lo)
+print("PASS sim reads VAR_IN_OUT CONSTANT and 16# literals")
+PY
 echo "ALL OK"

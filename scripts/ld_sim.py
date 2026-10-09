@@ -44,13 +44,18 @@ class Sim:
         self.ld = list(node.find(f"{P}body/{P}LD"))
         self.v, self.consts, self.timers = {}, {}, {}
         blocks = list(node.find(f"{P}interface"))
+        # VAR CONSTANT is a constant localVars block. VAR_IN_OUT CONSTANT is also flagged
+        # constant="true" but is a read-only reference with no initial values: a variable.
+        def is_const(b):
+            return b.get("constant") == "true" and tag(b) != "inOutVars"
+
         # Constants first: initial values may use them (VAR CONSTANT comes after VAR)
-        for block in sorted(blocks, key=lambda b: b.get("constant") != "true"):
+        for block in sorted(blocks, key=lambda b: not is_const(b)):
             for var in block.findall(f"{P}variable"):
                 name, t = var.get("name"), var.find(f"{P}type")
                 is_bool = t is not None and t.find(f"{P}BOOL") is not None
                 init = var.find(f"{P}initialValue/{P}simpleValue")
-                if block.get("constant") == "true":
+                if is_const(block):
                     self.consts[name] = self.literal(init.get("value"))
                 elif init is not None:
                     self.v[name] = self.literal(init.get("value"))
@@ -64,6 +69,8 @@ class Sim:
             return s.upper() == "TRUE"
         if m := re.fullmatch(r"T#(?:(\d+)S)?(?:(\d+)MS)?", s, re.I):
             return int(m.group(1) or 0) * 1000 + int(m.group(2) or 0)
+        if m := re.fullmatch(r"(2|8|16)#([0-9A-Fa-f_]+)", s):
+            return int(m.group(2).replace("_", ""), int(m.group(1)))
         if re.fullmatch(r"-?\d+", s):
             return int(s)
         if re.fullmatch(r"-?\d+\.\d*", s):
