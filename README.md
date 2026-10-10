@@ -13,9 +13,12 @@ NETWORK Run-on timer
 
 NETWORK Valve
     -> fbValve(bOpen := _bOpenCmd, rSetpoint := rSp, bOpened => bValveOpen)
+
+NETWORK Advance target
+    -> rTarget := ADD(rHome, rPitch)
 ```
 
-It handles contacts, coils, set/reset, compares, MOVE, timers, FB calls on EN/ENO, jumps, and ladder state machines in the house sequence structure. The XML format follows real exports from CODESYS V3.5 SP15 and ctrlX PLC Engineering 3.6.5.
+It handles contacts, coils, set/reset, compares, MOVE, operator boxes (ADD/SUB/MUL/DIV, SEL, MUX, LIMIT, `<type>_TO_<type>` conversions), timers, FB calls on EN/ENO, jumps, and ladder state machines in the house sequence structure. The XML format follows real exports from CODESYS V3.5 SP15 and ctrlX PLC Engineering 3.6.5 / 4.6.2, and the operator boxes are checked element for element against ctrlX exports.
 
 ## Requires codesys-st
 
@@ -47,11 +50,13 @@ Requirements: Python 3.10+, and `lxml` for the schema check that `tests/run.sh` 
 | `references/ladder.md` | The ladder text language, the three box forms, ladder sequences, and the XML mapping |
 | `references/examples/FB_CycleLD.st` | codesys-st's clamp/work/unclamp sequence, in ladder |
 | `references/examples/traffic_light/` | A complete example: design doc, ladder FB and program, and a test plan |
-| `references/exports/` | A real CODESYS LD export, as a format reference |
+| `references/examples/FB_AxisCtrl.st`, `press_tests/` | A ladder ctrlX MC_ axis wrapper (power, move, halt, reset, latched diagnosis) and its simulator test with fake MC_ blocks |
+| `references/exports/` | Real LD exports used as format references: a CODESYS V3.5 SP15 export (third-party) and ctrlX PLC Engineering exports of the operator boxes and compares |
 | `scripts/ladder.py` | The compiler (loaded by codesys-st's converter) |
 | `scripts/ld_trace.py` | Reads LD from any PLCopenXML file back as one boolean expression per output |
-| `scripts/ld_sim.py` | Scan-cycle simulator for testing ladder logic before import |
-| `tests/run.sh` | Builds, validates, traces and simulates every example |
+| `scripts/ld_sim.py` | Scan-cycle simulator for testing ladder logic before import, with Python models for other FBs (e.g. fake axes) |
+| `scripts/ld_diff.py` | Compares the LD bodies of two PLCopenXML files element by element (compiler output vs. a real export) |
+| `tests/run.sh`, `tests/features/` | Regression suite: builds, validates, traces and simulates every example and feature test, and diffs rebuilt exports against the real ones |
 
 ## Building and checking an import file yourself
 
@@ -64,4 +69,4 @@ The tracer also works on ladder exported from CODESYS, which makes it handy for 
 
 ## License
 
-MIT, except `references/exports/`, which keeps its original Unlicense terms. See [LICENSE](LICENSE).
+MIT, except `references/exports/codesys_v35sp15_ladder.xml`, which keeps its original Unlicense terms. See [LICENSE](LICENSE).

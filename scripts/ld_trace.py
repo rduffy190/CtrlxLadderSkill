@@ -8,6 +8,7 @@ Use it to check that generated ladder is wired as intended, or to read ladder ex
 from CODESYS. It follows the connections and ignores positions. Parallel branches print
 as OR, series as AND, and boxes as Instance(pins).Pin.
 """
+import re
 import sys
 import xml.etree.ElementTree as ET
 
@@ -82,6 +83,24 @@ def trace_ld(ld):
         elif t in ("jump", "return"):
             target = f" {e.get('label')}" if t == "jump" else ""
             print(f"    {t.upper()}{target} IF {source(e.find(f'{P}connectionPointIn'))}")
+        elif t == "block" and e.get("typeName") in INFIX and e.get("localId") not in consumed:
+            pins = {v.get("formalParameter"): v for v in e.findall(f"{P}inputVariables/{P}variable")}
+            target = next((v.findtext(f"{P}connectionPointOut/{P}expression")
+                           for v in e.findall(f"{P}outputVariables/{P}variable")
+                           if v.get("formalParameter") == "Out2"), None) or "?"
+            cond = source(pins["EN"].find(f"{P}connectionPointIn"))
+            a = source(pins["In2"].find(f"{P}connectionPointIn"))
+            b = source(pins["In3"].find(f"{P}connectionPointIn"))
+            print(f"    {target} := {a} {INFIX[e.get('typeName')]} {b}" + ("" if cond == "TRUE" else f"  IF {cond}"))
+        elif t == "block" and is_operator(e) and e.get("localId") not in consumed:
+            # SEL / MUX / LIMIT / X_TO_Y: shown as a function call on the target
+            pins = e.findall(f"{P}inputVariables/{P}variable")
+            target = next((v.findtext(f"{P}connectionPointOut/{P}expression")
+                           for v in e.findall(f"{P}outputVariables/{P}variable")
+                           if v.get("formalParameter") == "Out2"), None) or "?"
+            cond = source(pins[0].find(f"{P}connectionPointIn"))
+            args = ", ".join(source(v.find(f"{P}connectionPointIn")) for v in pins[1:])
+            print(f"    {target} := {e.get('typeName')}({args})" + ("" if cond == "TRUE" else f"  IF {cond}"))
         elif t == "block" and e.get("typeName") == "MOVE" and e.get("localId") not in consumed:
             pins = {v.get("formalParameter"): v for v in e.findall(f"{P}inputVariables/{P}variable")}
             target = next(v.findtext(f"{P}connectionPointOut/{P}expression")
@@ -93,6 +112,16 @@ def trace_ld(ld):
         elif t == "block" and e.get("localId") not in consumed:
             call = expr(e.get('localId')).removesuffix('.result').removesuffix('.ENO')
             print(f"    CALL {call.replace('(EN := TRUE, ', '(').replace('(EN := TRUE)', '()')}")
+
+
+INFIX = {"ADD": "+", "SUB": "-", "MUL": "*", "DIV": "/"}
+OTHER_OPERATORS = {"SEL", "MUX", "LIMIT"}
+
+
+def is_operator(e):
+    """Operator box (no instance) with an Out2 result: SEL, MUX, LIMIT or a <type>_TO_<type> conversion."""
+    t = e.get("typeName", "")
+    return e.get("instanceName") is None and (t in OTHER_OPERATORS or re.fullmatch(r"[A-Z_]+_TO_[A-Z_]+", t) is not None)
 
 
 def check_parallel_markers(ld, els):

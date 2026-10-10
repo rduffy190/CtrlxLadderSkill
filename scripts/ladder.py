@@ -33,6 +33,29 @@ ELEMENTTYPE = "http://www.3s-software.com/plcopenxml/fbdelementtype"
 PARALLELBRANCH = "http://www.3s-software.com/plcopenxml/ldparallelbranch"
 
 COMPARE_OPS = {">=": "GE", "<=": "LE", "<>": "NE", ">": "GT", "<": "LT", "=": "EQ"}
+# Operator boxes, written 'target := OP(a, b, ...)'. All share MOVE's box form: EN (the rung),
+# operands on In2, In3, ... -> ENO, Out2 (the target), as ctrlX PLC Engineering exports them
+# (exports/ctrlx_math_compare.xml, exports/ctrlx_other_operators.xml). Value: (min, max) operands,
+# max None = no limit.
+OPERATORS = {
+    "ADD": (2, 2), "SUB": (2, 2), "MUL": (2, 2), "DIV": (2, 2),
+    "SEL": (3, 3),          # SEL(G, IN0, IN1): IN1 when G is TRUE
+    "LIMIT": (3, 3),        # LIMIT(MN, IN, MX)
+    "MUX": (2, 99),         # MUX(K, IN0 .. IN97): IN<K>, up to 98 inputs
+}
+ELEMENTARY = ("BOOL|BYTE|WORD|DWORD|LWORD|SINT|USINT|INT|UINT|DINT|UDINT|LINT|ULINT|REAL|LREAL|"
+              "TIME|LTIME|DATE|TOD|TIME_OF_DAY|DT|DATE_AND_TIME|STRING|WSTRING")
+CONVERSION = re.compile(rf"(?:{ELEMENTARY})_TO_(?:{ELEMENTARY})")    # INT_TO_REAL(x): one operand
+
+
+def operator_arity(name):
+    """(min, max) operands of an operator box, or None if name isn't one."""
+    up = name.upper()
+    if up in OPERATORS:
+        return OPERATORS[up]
+    if CONVERSION.fullmatch(up):
+        return (1, 1)
+    return None
 
 # Library FBs: type -> ([(input, type)], [outputs]). These pin lists fix the pin order, give
 # the input types for the inputparamtypes entry, and let unknown pin names be reported. FBs
@@ -113,6 +136,28 @@ class Return:
 class Move:
     target: str
     expr: str
+
+
+@dataclass
+class Operator:
+    target: str
+    op: str
+    operands: list
+
+
+def split_args(text):
+    """Split 'a, f(b, c), d' on top-level commas."""
+    args, depth, cur = [], 0, ""
+    for c in text:
+        if c == "," and depth == 0:
+            args.append(cur.strip())
+            cur = ""
+            continue
+        depth += (c in "([") - (c in ")]")
+        cur += c
+    if cur.strip():
+        args.append(cur.strip())
+    return args
 
 
 @dataclass
@@ -361,6 +406,15 @@ class Parser:
             expr = " ".join(self.s[start:self.i].split())
             if not expr:
                 self.error(f"expected a value after '{name} :='")
+            m = re.fullmatch(r"(\w+)\s*\((.*)\)", expr, re.S)
+            arity = operator_arity(m.group(1)) if m else None
+            if arity:
+                op, operands = m.group(1).upper(), split_args(m.group(2))
+                lo, hi = arity
+                if len(operands) < lo or (hi is not None and len(operands) > hi):
+                    want = f"exactly {lo}" if lo == hi else f"{lo} to {hi}"
+                    self.error(f"{op} takes {want} operand{'s' if lo > 1 else ''}, got {len(operands)}")
+                return Operator(name, op, operands)
             return Move(name, expr)
         if call:
             return self.box(name, None)
@@ -542,6 +596,8 @@ class Emitter:
             self.connect(self.node("return"), refs)
         elif isinstance(out, Move):
             self.operator("MOVE", refs, [out.expr], ["ENO", "Out2"], {"Out2": out.target})
+        elif isinstance(out, Operator):
+            self.operator(out.op, refs, out.operands, ["ENO", "Out2"], {"Out2": out.target})
         elif isinstance(out, Box):
             self.box(out, refs)
 

@@ -29,3 +29,6 @@ taken from the "ascii-ladder" project on CODESYS Forge
 (https://forge.codesys.com/u/i-campbell/ascii-ladder/), which is released
 under the Unlicense. It is included as a format reference and is not
 covered by the MIT License above.
+
+The other files in references/exports/ (ctrlx_*.xml) are exports made by the
+author in ctrlX PLC Engineering and are covered by the MIT License above.
