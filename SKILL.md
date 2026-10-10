@@ -33,7 +33,7 @@ NETWORK Target
 
 Put the source in `.st` files with the `END_...` keywords, as codesys-st describes for PLCopenXML. DUTs, GVLs and ST POUs can go in the same build.
 
-**Converting ST to ladder / all-ladder projects:** read **Converting ST to ladder** in `references/ladder.md`. Math, SEL/MUX/LIMIT and type conversions are ladder operator boxes (`-> y := ADD(a, b)`, `-> r := INT_TO_REAL(i)`). Only loops, strings or calls to your own FUNCTIONs stay in a small ST FB. Everything else, including MC_ axis wrappers and validation, goes to rungs. `references/examples/FB_AxisCtrl.st` is a ladder axis wrapper.
+**Converting ST to ladder / all-ladder projects:** read **Converting ST to ladder** in `references/ladder.md`. Math, SEL/MUX/LIMIT and type conversions are ladder operator boxes (`-> y := ADD(a, b)`, `-> r := INT_TO_REAL(i)`). Only loops, strings or calls to your own FUNCTIONs stay in a small ST FB. Everything else, including MC_ axis wrappers and validation, goes to rungs. `references/examples/FB_AxisCtrl.st` is a ladder axis wrapper, compiled and run on ctrlX.
 
 ## Building and checking
 

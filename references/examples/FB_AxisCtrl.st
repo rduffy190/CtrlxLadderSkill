@@ -1,5 +1,6 @@
-// FB_AxisCtrl in ladder, from the PressSystem project (2026-10-10). Schema-valid and scan-tested in ld_sim with
-// fake MC_ models (press_tests/test_axisctrl.py); NOT yet compiled in ctrlX PLC Engineering.
+// FB_AxisCtrl in ladder, from the PressSystem project. Verified 2026-10-10: imported, compiled and run in
+// ctrlX PLC Engineering 4.6 on ctrlX COREvirtual axes as part of the press system. Also scan-tested in
+// ld_sim with fake MC_ models (press_tests/test_axisctrl.py).
 // FB_AxisCtrl: one ctrlX axis through CXA_PLCopen: power, absolute move, halt, reset and status.
 // Latches the first error with its ctrlX diagnosis until reset. Not a sequence; the caller drives it.
 FUNCTION_BLOCK FB_AxisCtrl
@@ -123,7 +124,7 @@ NETWORK Move absolute
                BufferMode := MC_BUFFER_MODE.mcAborting, Axis := stAxis)
 
 NETWORK Halt
-// The manual's interface table calls the axis pin 'Axes'; rename here if the compiler rejects 'Axis'
+// Axis pin is 'Axis' (verified on ctrlX; the manual's interface table misnames it 'Axes')
     -> _fbHalt(Execute := _bHaltExecute, Deceleration := lrHaltDec, Jerk := 0.0, Axis := stAxis)
 
 // ===== Outputs, last =====
