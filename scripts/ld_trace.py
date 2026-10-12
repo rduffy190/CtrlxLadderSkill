@@ -53,11 +53,14 @@ def trace_ld(ld):
             cmp = f"[{a} {INFIX[e.get('typeName')]} {b}]"
             return cmp if en == "TRUE" else f"{en} AND {cmp}"
         if t == "block":
+            # Inputs and VAR_IN_OUTs (pin := value), then wired outputs; a function's result
+            # pin is '   ' (shown as 'result'). '???' is an open function pin, which won't compile
             args = [f"{v.get('formalParameter')} := {source(v.find(f'{P}connectionPointIn'))}"
-                    for v in e.findall(f"{P}inputVariables/{P}variable")]
+                    for v in [*e.findall(f"{P}inputVariables/{P}variable"),
+                              *e.findall(f"{P}inOutVariables/{P}variable")]]
             args += [f"{v.get('formalParameter').strip() or 'result'} => {v.findtext(f'{P}connectionPointOut/{P}expression')}"
                      for v in e.findall(f"{P}outputVariables/{P}variable")
-                     if v.findtext(f"{P}connectionPointOut/{P}expression")]
+                     if v.findtext(f"{P}connectionPointOut/{P}expression") not in (None, "")]
             name = e.get("instanceName") or e.get("typeName")
             return f"{name}({', '.join(args)}).{(pin or '').strip() or 'result'}"
         return f"<{t} {lid}>"

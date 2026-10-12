@@ -11,7 +11,7 @@ Import it from a test script:
 Each scan runs the networks top to bottom, as the PLC does. Enum values, VAR CONSTANTs and
 initial values are read from the XML. Supported: contacts (not edge contacts), coils
 (normal, negated, set, reset), compare boxes (EQ/NE/GT/GE/LT/LE), MOVE, ADD/SUB/MUL/DIV, SEL/MUX/LIMIT,
-<type>_TO_<type> conversions and TON. Anything
+<type>_TO_<type> conversions, TON, and function calls through models. Anything
 else raises, so a test can't pass by silently skipping logic.
 
 Other FB boxes (your own FBs, MC_ motion FBs...) run through Python models you pass in:
@@ -23,6 +23,17 @@ Other FB boxes (your own FBs, MC_ motion FBs...) run through Python models you p
 
 The returned outputs are readable as contacts/expressions ('_fbLift.bInPos') and are written
 to any variable wired with 'PIN => var'. An FB box whose EN is off isn't called.
+
+Function calls (your FUNCTIONs, library ML_ functions) run through a plain Python function under
+the function's name, called every time the box runs, with the input and VAR_IN_OUT values:
+
+    def ml_axs_power(pins, sim):         # pins: {"EN": True, "Data": ...}
+        return {"result": True}          # the return value; also any VAR_OUTPUT or VAR_IN_OUT
+    sim = Sim("Project.xml", "PRG_X", models={"ML_AxsPower": ml_axs_power})
+
+'result' goes to the call's target ('x := Func(...)') or, for a BOOL function without EN/ENO,
+into the rung. Returned outputs and VAR_IN_OUTs are written to the variables they're wired to.
+With EN off the function isn't called.
 
 Struct members are flat dotted names: sim.v["stSp.lrPitch"] = 100.0. An unset member of a
 declared variable reads 0, and MOVE of a struct (_stSp := stSp) copies every member.
@@ -248,6 +259,8 @@ class Sim:
                     self.v[target] = tm[v.get("formalParameter")]
             return {"ENO": True, **tm}
         inst = e.get("instanceName")
+        if typ in self.models and not inst:
+            return self.function(e, typ, pins, source)
         if typ in self.models and inst:
             if pins.get("EN") is False:
                 return {"ENO": False}
@@ -260,6 +273,34 @@ class Sim:
                     self.v[target] = outs[v.get("formalParameter")]
             return {"ENO": True, **outs}
         raise NotImplementedError(f"{typ} boxes aren't simulated (pass a model for it)")
+
+    def function(self, e, typ, pins, source):
+        """Function box: EN/ENO, or none when the rung drives the first input and continues
+        from the BOOL result (output pin '   ')."""
+        en = "EN" in pins
+        if en and not pins["EN"]:
+            return {"ENO": False, "   ": False}
+        io = {}
+        for v in e.findall(f"{P}inOutVariables/{P}variable"):
+            io[v.get("formalParameter")] = (source(v.find(f"{P}connectionPointIn")), next(
+                (self.ld_expr(c.get("refLocalId")) for c in v.findall(f"{P}connectionPointIn/{P}connection")), None))
+        outs = self.models[typ]({**pins, **{k: val for k, (val, _) in io.items()}}, self) or {}
+        for v in e.findall(f"{P}outputVariables/{P}variable"):
+            pin = v.get("formalParameter").strip() or "result"
+            target = v.findtext(f"{P}connectionPointOut/{P}expression")
+            if target and target != "???" and pin in outs:
+                self.v[self.key(target)] = outs[pin]
+        for pin, (_, var) in io.items():
+            if pin in outs and var:
+                self.v[self.key(var)] = outs[pin]
+        if en:
+            return {"ENO": True, "   ": outs.get("result")}
+        return {"   ": bool(outs.get("result"))}
+
+    def ld_expr(self, lid):
+        """The expression of the inVariable with this localId (a VAR_IN_OUT's variable)."""
+        return next((x.findtext(f"{P}expression") for x in self.ld
+                     if tag(x) == "inVariable" and x.get("localId") == lid), None)
 
     def models_by_instance(self):
         """Instance names declared in the POU whose FB type has a model."""

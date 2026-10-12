@@ -4,11 +4,12 @@
 #  - runs the traffic light's test plan and the FB_AxisCtrl test (fake MC_ models) in ld_sim;
 #  - checks ld_sim features: VAR_IN_OUT CONSTANT/16# literals, struct MOVE, FB models, math;
 #  - rebuilds ExampleMath and diffs it element for element against the real ctrlX export
-#    (and checks ld_diff reports a difference when there is one).
+#    (and checks ld_diff reports a difference when there is one);
+#  - rebuilds the function-call export (user FUNCTIONs, ML_AxsPower via --lib) and diffs it.
 # Exits non-zero on the first failure.
 set -euo pipefail
 LAD="$(cd "$(dirname "$0")/.." && pwd)"
-ST="$LAD/../codesys-st/scripts"
+ST="$LAD/../ctrlx-engineer/scripts"
 OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT
 
@@ -93,6 +94,49 @@ assert convert("DINT_TO_INT", 40000) == -25536 and convert("INT_TO_UINT", -1) ==
 assert convert("INT_TO_BOOL", 3) is True and convert("BOOL_TO_INT", True) == 1 and convert("INT_TO_LREAL", 4) == 4.0
 print("PASS sim SEL/MUX/LIMIT, conversions (rounding, wrap, BOOL), case-insensitive names")
 PY
+
+# function calls: user FUNCTIONs and a library function (--lib), diffed against the ctrlX export
+build funcs "$LAD/tests/features" FunctionCalls.st --lib "$LAD/references/lib_sigs/CXA_Motion_ML.st"
+# The export leaves Out3/Out4 open ('???'), which doesn't compile; the source wires them
+python3 - "$LAD/references/exports/ctrlx_function_calls.xml" "$OUT/funcs_export.xml" <<'PY2'
+import sys
+s = open(sys.argv[1], encoding="utf-8-sig").read()
+assert s.count("<expression>???</expression>") == 2
+s = s.replace("<expression>???</expression>", "<expression>_bOut3</expression>", 1)
+s = s.replace("<expression>???</expression>", "<expression>_bOut4</expression>", 1)
+open(sys.argv[2], "w", encoding="utf-8").write(s)
+PY2
+python3 "$LAD/scripts/ld_diff.py" "$OUT/funcs_export.xml" "$OUT/funcs.xml" ExFunCalls
+grep -q 'pou name="ML_AxsPower"' "$OUT/funcs.xml" && { echo "FAIL: --lib declaration put in the project"; exit 1; }
+python3 - "$LAD/scripts" "$OUT/funcs.xml" <<'PY2'
+import sys; sys.path.insert(0, sys.argv[1])
+from ld_sim import Sim
+calls = []
+def fn1(p, sim): return {"result": p["bExecute"], "retVal": 7}
+def fn2(p, sim): calls.append(p); return {"result": p["paramA"] + p["paramB"]}
+def power(p, sim): return {"result": True}
+s = Sim(sys.argv[2], "ExFunCalls", models={"Fn_UserFunc": fn1, "Fn_UserFunc2": fn2, "ML_AxsPower": power})
+s.run(10, _bExecute=False, _rParamVal=2.5)
+assert not s.v["_bExDone"] and s.v["_iRetVal"] == 7 and not calls and not s.v["_bExecuteOK"], s.v
+s.run(10, _bExecute=True)
+assert s.v["_bExDone"] and s.v["_rRetVal"] == 3.5 and s.v["_bExecuteOK"], s.v
+print("PASS sim function calls: BOOL form always called, EN/ENO form only with EN")
+PY2
+for bad in "a b := Fn_UserFunc() -> b|returns BOOL into the rung" \
+           "a Fn_UserFunc(bExecute := b) -> b|its first input bExecute is the rung" \
+           "a b := ML_AxsPower() -> b|missing Data := ..." \
+           "a b := Fn_UserFunc2(paramA := 1.0) -> b|missing paramB := ..., structVal => ..., Out4 => ..." \
+           "a Fn_UserFunc(Out3 => b) -> b|missing retVal => ..." \
+           "-> ML_AxsPower(Data := a)|missing the result" \
+           "a Fn_Nope(x := 1) -> b|not a FUNCTION in the files"; do
+    printf 'PROGRAM T\nVAR\n a:BOOL; b:BOOL;\nEND_VAR\nNETWORK x\n    %s\nEND_PROGRAM\n' "${bad%%|*}" > "$OUT/fbad.st"
+    if (cd "$LAD/tests/features" && python3 "$ST/st_to_plcopenxml.py" "$OUT/fbad.st" FunctionCalls.st \
+            --lib "$LAD/references/lib_sigs/CXA_Motion_ML.st" -o "$OUT/fbad.xml" 2> "$OUT/fbad.err"); then
+        echo "FAIL: '${bad%%|*}' compiled"; exit 1
+    fi
+    grep -q "${bad#*|}" "$OUT/fbad.err" || { cat "$OUT/fbad.err"; echo "FAIL: wrong message"; exit 1; }
+done
+echo "PASS function call errors"
 
 # operand counts are checked
 printf 'PROGRAM T\nVAR\n a:INT; b:INT; y:INT;\nEND_VAR\nNETWORK x\n    -> y := LIMIT(a, b)\nEND_PROGRAM\n' > "$OUT/arity.st"

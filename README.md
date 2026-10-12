@@ -20,9 +20,9 @@ NETWORK Advance target
 
 It handles contacts, coils, set/reset, compares, MOVE, operator boxes (ADD/SUB/MUL/DIV, SEL, MUX, LIMIT, `<type>_TO_<type>` conversions), timers, FB calls on EN/ENO, jumps, and ladder state machines in the house sequence structure. The XML format follows real exports from CODESYS V3.5 SP15 and ctrlX PLC Engineering 3.6.5 / 4.6.2, and the operator boxes are checked element for element against ctrlX exports.
 
-## Requires codesys-st
+## Requires ctrlx-engineer
 
-This skill is an add-on to [codesys-st](https://github.com/rduffy190/CtrlxPlcSkill) and doesn't work without it. codesys-st provides:
+This skill is an add-on to [ctrlx-engineer](https://github.com/rduffy190/CtrlxPlcSkill) and doesn't work without it. ctrlx-engineer provides:
 
 - the house rules (naming, sequence structure) this skill follows;
 - `st_to_plcopenxml.py`, the converter that builds the import file and loads this skill's compiler for ladder POUs;
@@ -33,7 +33,7 @@ This skill is an add-on to [codesys-st](https://github.com/rduffy190/CtrlxPlcSki
 Clone both into your Claude Code skills folder, side by side, under these exact names:
 
 ```bash
-git clone git@github.com:rduffy190/CtrlxPlcSkill.git    ~/.claude/skills/codesys-st
+git clone git@github.com:rduffy190/CtrlxPlcSkill.git    ~/.claude/skills/ctrlx-engineer
 git clone git@github.com:rduffy190/CtrlxLadderSkill.git ~/.claude/skills/codesys-lad
 ~/.claude/skills/codesys-lad/tests/run.sh               # should end with ALL OK
 ```
@@ -48,11 +48,11 @@ Requirements: Python 3.10+, and `lxml` for the schema check that `tests/run.sh` 
 |---|---|
 | `SKILL.md` | The skill: when to use it, how to write, build and check ladder |
 | `references/ladder.md` | The ladder text language, the three box forms, ladder sequences, and the XML mapping |
-| `references/examples/FB_CycleLD.st` | codesys-st's clamp/work/unclamp sequence, in ladder |
+| `references/examples/FB_CycleLD.st` | ctrlx-engineer's clamp/work/unclamp sequence, in ladder |
 | `references/examples/traffic_light/` | A complete example: design doc, ladder FB and program, and a test plan |
 | `references/examples/FB_AxisCtrl.st`, `press_tests/` | A ladder ctrlX MC_ axis wrapper (power, move, halt, reset, latched diagnosis) and its simulator test with fake MC_ blocks |
 | `references/exports/` | Real LD exports used as format references: a CODESYS V3.5 SP15 export (third-party) and ctrlX PLC Engineering exports of the operator boxes and compares |
-| `scripts/ladder.py` | The compiler (loaded by codesys-st's converter) |
+| `scripts/ladder.py` | The compiler (loaded by ctrlx-engineer's converter) |
 | `scripts/ld_trace.py` | Reads LD from any PLCopenXML file back as one boolean expression per output |
 | `scripts/ld_sim.py` | Scan-cycle simulator for testing ladder logic before import, with Python models for other FBs (e.g. fake axes) |
 | `scripts/ld_diff.py` | Compares the LD bodies of two PLCopenXML files element by element (compiler output vs. a real export) |
@@ -61,7 +61,7 @@ Requirements: Python 3.10+, and `lxml` for the schema check that `tests/run.sh` 
 ## Building and checking an import file yourself
 
 ```bash
-python3 ~/.claude/skills/codesys-st/scripts/st_to_plcopenxml.py E_State.st GVL_IO.st FB_Seq.st PRG_Main.st -o Project.xml
+python3 ~/.claude/skills/ctrlx-engineer/scripts/st_to_plcopenxml.py E_State.st GVL_IO.st FB_Seq.st PRG_Main.st -o Project.xml
 python3 ~/.claude/skills/codesys-lad/scripts/ld_trace.py Project.xml
 ```
 

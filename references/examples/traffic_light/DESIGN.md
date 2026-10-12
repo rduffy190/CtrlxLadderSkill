@@ -1,10 +1,10 @@
 # Traffic Light Controller – Design
 
-2026-10-09 · Ladder test for the codesys-st skill
+2026-10-09 · Ladder test for the ctrlx-engineer skill
 
 ## Overview
 
-A two-lane traffic light, written in ladder as the first real test of the codesys-st ladder compiler. Green rests on one lane until a car waits in the other lane or a pedestrian presses the button. It then changes through yellow (6 s) and all-red (2 s), and never gives a lane less than 30 s of green. If the controller stops, every lane fails to red.
+A two-lane traffic light, written in ladder as the first real test of the ctrlx-engineer ladder compiler. Green rests on one lane until a car waits in the other lane or a pedestrian presses the button. It then changes through yellow (6 s) and all-red (2 s), and never gives a lane less than 30 s of green. If the controller stops, every lane fails to red.
 
 Design basis (confirmed 2026-10-09):
 

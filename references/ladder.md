@@ -1,6 +1,6 @@
 # Ladder text (LD)
 
-Ladder is written as plain text and compiled to a CODESYS LD body by codesys-st's `scripts/st_to_plcopenxml.py`, which loads this skill's `scripts/ladder.py`. A POU is ladder when its implementation starts with `NETWORK`. The declaration stays normal ST. ST and LD POUs can share one `.st` file and one run of the script.
+Ladder is written as plain text and compiled to a CODESYS LD body by ctrlx-engineer's `scripts/st_to_plcopenxml.py`, which loads this skill's `scripts/ladder.py`. A POU is ladder when its implementation starts with `NETWORK`. The declaration stays normal ST. ST and LD POUs can share one `.st` file and one run of the script.
 
 ```iecst
 PROGRAM PRG_Conveyor
@@ -41,6 +41,7 @@ Power flows left to right. Elements written next to each other are in **series**
 | `/bX` | NC contact |
 | `P:bX` / `N:bX` | rising / falling edge contact |
 | `[a > b]` | compare box: `>` `>=` `<` `<=` `=` `<>` on any two expressions |
+| `Func(...)` / `x := Func(...)` | function call in the rung, see **Function calls** |
 | `( ... | ... )` | parallel branches |
 
 Operands can be anything that names a BOOL: `GVL_IO.bDI_Start`, `aBits[3]`, `stStatus.bReady`, `wStatus.3`, `TRUE`.
@@ -55,6 +56,7 @@ Operands can be anything that names a BOOL: `GVL_IO.bDI_Start`, `aBits[3]`, `stS
 | `rOut := expr` | MOVE box (EN from the rung) |
 | `rOut := ADD(a, b)` | operator box: `ADD` `SUB` `MUL` `DIV` `SEL` `MUX` `LIMIT` `<type>_TO_<type>`, see **Operator boxes** |
 | `fbX(...)` | FB call, see below |
+| `x := Func(...)` | function call, result to `x` (EN from the rung), see **Function calls** |
 | `JMP:label` | jump to a network's `LABEL` |
 | `RET` | return |
 
@@ -87,6 +89,40 @@ bRun fbRunOn(PT := T#5S, ET => tElapsed) -> bRunOnDone
 -> fbPower:MC_Power(Enable := bEnable, Axis := stAxis1, Status => bPowered)
 -> fbMove:MC_MoveAbsolute(Execute := _bMoveCmd, Axis := stAxis1, Position := lrTarget,
                           Velocity := lrVel, Done => bInPos, Error => bMoveErr)
+```
+
+## Function calls
+
+Your own FUNCTIONs and library functions (e.g. the `ML_` motion functions) are boxes too, with no instance. The form follows the function's interface, as ctrlX PLC Engineering exports it (`references/exports/ctrlx_function_calls.xml`, rebuilt from `tests/features/FunctionCalls.st` by `tests/run.sh`):
+
+| Function | Rung in | Rung out | Written as |
+|---|---|---|---|
+| First input **and** result BOOL | the first input | the result | `bGo Fn_Check(iLimit := 5, iCount => _iCount) -> bOk` |
+| Anything else | `EN` | `ENO` | `bGo _rOut := Fn_Scale(rRaw := rIn, rGain := 2.0) -> bDone` |
+
+```
+NETWORK BOOL function: the rung is bExecute, the result drives the coil
+    _bExecute Fn_UserFunc(retVal => _iRetVal, Out3 => _bOut3) -> _bExDone
+
+NETWORK Other functions: EN/ENO, the result to the target before ':='
+    _bExecute _rRetVal := Fn_UserFunc2(paramA := 1.0, paramB := _rParamVal, structVal => _stStuctVal, Out4 => _bOut4) -> _bExDone
+
+NETWORK Library function with a VAR_IN_OUT
+    _bExecute _bExecuteOK := ML_AxsPower(Data := _stParams) -> _bExDone
+
+NETWORK Result only, nothing after ENO
+    -> _rScaled := Fn_Scale(rRaw := rIn, rGain := 2.0)
+```
+
+- **BOOL form.** When the first input and the result are both BOOL, the contacts in front are that first input and the rung continues from the result, like a timer's IN/Q. Don't name the first input, and don't write `x :=` (follow the call with `-> coil`). The function runs every scan, with the rung's state on its first input.
+- **EN/ENO form.** `x := Func(...)` can sit in the rung (the rung continues from ENO, so a coil after it shows the call ran) or after `->` (it ends the rung, like a MOVE). With EN off the function isn't called and `x` keeps its last value. `x :=` is required.
+- **Every pin must be connected.** Inputs and `VAR_IN_OUT`s take `PIN := expr`, `VAR_OUTPUT`s take `PIN => var`, and in the EN/ENO form the result takes `x :=`. CODESYS doesn't compile a function call with an open pin (the editor shows it as `???`), so the compiler rejects one and lists what's missing. Wire an output you don't need to a scratch variable. A pin takes a variable or a constant.
+- **The interface must be known**, because it decides the form and which pins are `VAR_IN_OUT`s. Your own FUNCTIONs are read from the files you build. Library functions go in a declarations file passed with `--lib` (repeatable): `FUNCTION ... END_FUNCTION` with the return type and the VAR blocks, no body. It's read for the calls only and isn't put in the project. `references/lib_sigs/CXA_Motion_ML.st` has `ML_AxsPower`; add other `ML_` functions in the same shape from ctrlx-engineer's `references/motion/` (their `Data` struct is a `VAR_IN_OUT`, the result a BOOL "command accepted"). An unknown function is a compile error.
+- **`ML_` functions submit a command each time they run**, so they must not run every scan (ctrlx-engineer's `references/motion-essentials.md`). Give them a one-scan rung: an entry condition on `_bStateChanged` or an edge, never a level that stays on.
+- `ld_trace.py` shows a call as `Func(EN := …, pins, result => x).ENO`, or `.result` for the BOOL form. `ld_sim.py` runs functions through plain Python functions (see **Simulating FBs**).
+
+```
+python3 <ctrlx-engineer-dir>/scripts/st_to_plcopenxml.py PRG_X.st --lib <codesys-lad-dir>/references/lib_sigs/CXA_Motion_ML.st -o Project.xml
 ```
 
 ## Operator boxes (math, selection, conversion)
@@ -147,7 +183,7 @@ The compiler warns when a compare sits in a parallel branch.
 
 ## Sequences
 
-A ladder sequence uses the same sections as the ST house structure in codesys-st's `references/patterns.md` §1, in the same order. Read §1 first, because the reasons for the order carry over. Ladder has no `IF`/`CASE` and every rung runs every scan, so it adds two things:
+A ladder sequence uses the same sections as the ST house structure in ctrlx-engineer's `references/patterns.md` §1, in the same order. Read §1 first, because the reasons for the order carry over. Ladder has no `IF`/`CASE` and every rung runs every scan, so it adds two things:
 
 - **`_eNextState`.** Jumps and transitions never write `_eState`. They write `_eNextState` with a MOVE (`-> _eNextState := E_X.Working`).
 - **A commit after each section that can change state.** The network `-> _eState := _eNextState` follows the jumps and follows the transitions. That gives the same behaviour as the ST version: the transitions see the state the jumps chose, and on-change sees the final state. Every commit leaves `_eNextState = _eState`, so a section in which nothing fires changes nothing.
@@ -170,7 +206,7 @@ Notes:
 - **Writers.** `_eNextState`, `_tStepTimeout` and the fault fields are each written by several MOVEs, the way ST assigns `_eState` in many CASE branches. They're internal registers, not outputs. Every real output still has exactly one coil.
 - **`_eState > last state`** needs the states to be numbered in order, with the last one highest. Keep `Faulted` (or whatever is last) at the end of the enum.
 
-The full worked example is `references/examples/FB_CycleLD.st`: the `FB_Cycle` from codesys-st's `patterns.md` §1 in ladder. It uses the `E_CycleState` enum from that section. Start from it when writing a ladder sequence. `references/examples/traffic_light/` is a second, complete example: a design doc (`DESIGN.md`), a ladder sequence FB with demand-driven transitions, and a program that calls it on EN/ENO.
+The full worked example is `references/examples/FB_CycleLD.st`: the `FB_Cycle` from ctrlx-engineer's `patterns.md` §1 in ladder. It uses the `E_CycleState` enum from that section. Start from it when writing a ladder sequence. `references/examples/traffic_light/` is a second, complete example: a design doc (`DESIGN.md`), a ladder sequence FB with demand-driven transitions, and a program that calls it on EN/ENO.
 
 ## When to use ladder
 
@@ -181,7 +217,7 @@ Use ladder when the user asks for it, or for logic electricians read online: int
 When a customer wants "all ladder unless it must be ST", these points have been worked out:
 
 - **Math, selection and type conversion are ladder.** The operator boxes (see **Operator boxes**) cover formulas like linear scaling with a raw INT: `INT_TO_REAL`, then SUB, MUL and a guarded DIV, one box per network through intermediate variables. `SEL`/`MUX`/`LIMIT` replace entry-MOVE workarounds and clamping logic. Compute targets directly (e.g. advance to `ADD(home, pitch)` with an absolute move) instead of designing the math away with relative moves. A MOVE's value still goes into the XML as raw text, so keep it to a variable, a struct member or a constant, never an expression.
-- **What still stays ST:** loops, string handling, and calling your own FUNCTIONs from a rung (not supported). Put these in a small **ST function block** called on EN/ENO, with the reason in its header comment.
+- **What still stays ST:** loops and string handling. Put these in a small **ST function block** called on EN/ENO, or an ST FUNCTION called from a rung (see **Function calls**), with the reason in its header comment.
 - **Small validation functions** (e.g. `Fn_DynValid`) become one rung of compares in series into a BOOL, which is allowed. Split a long chain over two rungs plus an AND rung.
 - **IF/ELSIF latches** (first error wins): put the clear rung first. Then each latch rung is `/_bError cause -> S:_bError, _eErrorID := ..., _dwDiag := ...`. The set coil locks out the rungs below in the same scan, which is the ELSIF.
 - **`NOT (a AND b)` on a pin** goes into a helper coil: `bPower (/_fbPower.Error | /bReset) -> _bPowerEnable`.
@@ -196,6 +232,7 @@ When a customer wants "all ladder unless it must be ST", these points have been 
 - **FB boxes** other than TON (your own FBs, MC_ FBs) run through Python models. The type name maps to a class, one object is created per instance, and it's called as `model(pins, sim)` and returns its outputs. The outputs are readable as `inst.pin` (nested too: `"ErrorIdent.Additional1"`) and are written to `PIN => var`. Use this to test a sequence against a fake axis, e.g. one where moves take N scans, halts take M scans, and errors can be injected.
 - **Structs** are flat dotted keys: `sim.v["stSp.lrPitch"] = 250.0`. An unset member reads 0, and `MOVE _stSp := stSp` copies every member.
 - **Names are case-insensitive**, as in IEC: `in1` reads the declared `In1`. Use `sim.key(name)` for the declared spelling when reading back.
+- **Function calls** run through a plain Python function under the function's name in `models`: `fn(pins, sim)` gets the inputs and `VAR_IN_OUT`s and returns `{"result": ..., "OutPin": ...}`. `result` goes to the target (or into the rung for the BOOL form); outputs and returned `VAR_IN_OUT`s are written to their variables. With EN off it isn't called.
 - **Library constants** (`ERROR_CODE.DEVICE_ERROR`, `MC_BUFFER_MODE.mcAborting`) go in `consts`.
 - `run(ms)` runs `ms / scan_ms` scans, so `run(10)` at the default 10 ms is **one scan**. Give a multi-scan fake enough time.
 - **Make fakes realistic about time.** A halt that completes instantly hides logic that only runs during the halting step.
@@ -222,7 +259,8 @@ This follows real LD exports from CODESYS V3.5 SP15 and ctrlX PLC Engineering 3.
 - MOVE has inputs `EN` (the rung) and `In2` (the value), and outputs `ENO` and `Out2`, whose `<expression>` is the target variable;
 - the other operator boxes (ADD/SUB/MUL/DIV, SEL, MUX, LIMIT, `<type>_TO_<type>`) are the same with more operands: inputs `EN`, `In2`, `In3`, … (one per operand), outputs `ENO`, `Out2`, calltype `operator`, `InputParamTypes` `BOOL`, and no instance name (from ctrlX PLC Engineering exports);
 - FB calls have their rung pin first among the inputs (`EN`, or `IN` for a timer) and first among the outputs (`ENO`, or `Q`), then the named pins;
-- every block carries `fbdcalltype` (`operator` or `functionblock`) and `inputparamtypes` in its `addData`. Operators get `BOOL`. FBs get their input types, space-separated in pin order, the rung pin first (TON: `BOOL TIME`, as exported). For EN/ENO FBs that means `BOOL` for EN, then the inputs; that form is inferred, not seen in an export. The entry is left out when the FB's interface isn't known;
+- function calls (from a ctrlX PLC Engineering 4.6.2 export) are blocks with no `instanceName` and calltype `function`. The result is an output pin named three spaces (`"   "`). The BOOL form has the first input as its rung pin and `"   "` as its first output, which the next element connects to; the other form has `EN` first, then `ENO` and `"   "` (with the target `<expression>`) first among the outputs. `VAR_IN_OUT`s go in `inOutVariables`, fed from an `inVariable`, with an empty `<connectionPointOut><expression/>`. Every pin is wired (the editor writes an open output as `???`, which doesn't compile; the export's `Out3`/`Out4` are such pins, so `run.sh` wires them before diffing). `InputParamTypes` lists the rung pin's type and then each wired pin's, with `[REF]` on a `VAR_IN_OUT` (`BOOL ML_AxsPowerData[REF]`). The box is numbered right after the network title, before the contacts in front of it;
+- every block carries `fbdcalltype` (`operator`, `functionblock` or `function`) and `inputparamtypes` in its `addData`. Operators get `BOOL`. FBs get their input types, space-separated in pin order, the rung pin first (TON: `BOOL TIME`, as exported). For EN/ENO FBs that means `BOOL` for EN, then the inputs; that form is inferred, not seen in an export. The entry is left out when the FB's interface isn't known;
 - a `rightPowerRail` (localId 2147483646) closes the body.
 
 When the editor produces something the compiler doesn't, build a small example in the editor, export it, and copy its form. `ld_trace.py` reads exported LD, so it shows what the example means.

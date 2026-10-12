@@ -14,9 +14,11 @@ position 0,0 (the editor lays LD out itself from the connections), one shared le
 rail (localId 0), each network opened by a <comment> + 'networktitle' <vendorElement>,
 parallel branches as several <connection>s on one connectionPointIn (plus a 'ParallelBranch'
 marker when a branch holds a box), boxes in the rung (compare: EN/In2/In3 -> Out1,
-MOVE: EN/In2 -> ENO/Out2, FB calls: EN + pins -> ENO + pins), and a right power rail at the end.
+MOVE: EN/In2 -> ENO/Out2, FB calls: EN + pins -> ENO + pins, function calls: EN + pins ->
+ENO + result, or with no EN/ENO when the first input and the result are BOOL), and a right
+power rail at the end.
 
-Loaded by codesys-st's st_to_plcopenxml.py (this skill sits next to it in the skills folder):
+Loaded by ctrlx-engineer's st_to_plcopenxml.py (this skill sits next to it in the skills folder):
 a POU whose implementation starts with NETWORK is ladder.
 """
 import re
@@ -104,10 +106,11 @@ class Compare:
 
 @dataclass
 class Box:
-    instance: str
+    instance: str                      # FB instance, or the function's name for a function call
     type: str | None                   # None: take it from the declarations
     inputs: list = field(default_factory=list)    # [(pin, expr)]
     outputs: list = field(default_factory=list)   # [(pin, var)]
+    target: str | None = None          # 'target := Func(...)': a function call's result
 
 
 @dataclass
@@ -322,6 +325,16 @@ class Parser:
             return Contact(self.operand(), negated=True)
         name = self.operand("a contact, '(', '[' or a box")
         call = self.at_call()
+        if self.peek(2) == ":=":
+            # Function call in the rung: 'target := Func(pins)', the rung continuing from ENO
+            self.i += 2
+            func = self.operand("a function name after ':='")
+            if operator_arity(func) or func.upper() == "MOVE":
+                self.error(f"{func} is an operator box; put it after '->' (it ends the rung)")
+            if not self.at_call():
+                self.error(f"expected '(' right after {func}: only a function call can be "
+                           "assigned inside a rung (a MOVE goes after '->')")
+            return self.box(func, None, target=name)
         if self.peek() == ":" and self.peek(2) != ":=":
             self.i += 1
             if name.upper() in ("P", "N"):
@@ -353,9 +366,9 @@ class Parser:
                 return Compare(COMPARE_OPS[op], lhs, rhs, text.strip())
         self.error(f"expected a comparison like [a > b] (ops: {' '.join(COMPARE_OPS)})")
 
-    def box(self, instance, typ):
+    def box(self, instance, typ, target=None):
         self.eat("(")
-        box = Box(instance, typ)
+        box = Box(instance, typ, target=target)
         for arg in split_args(self.balanced(")")):
             if m := re.fullmatch(r"(\w+)\s*:=\s*(.+)", arg, re.S):
                 box.inputs.append((m.group(1), " ".join(m.group(2).split())))
@@ -363,7 +376,14 @@ class Parser:
                 box.outputs.append((m.group(1), m.group(2).strip()))
             else:
                 self.error(f"{instance}: can't read pin '{arg}' (use PIN := expr or PIN => var; "
-                           "the rung always goes through EN/ENO)")
+                           "the rung goes in on EN, a timer's IN or a BOOL function's first input)")
+        return box
+
+    def box_at_start(self, func, target):
+        self.operand()
+        box = self.box(func, None, target=target)
+        if self.peek():
+            self.error("unexpected text after the function call")
         return box
 
     # outputs := output {',' output}
@@ -415,6 +435,9 @@ class Parser:
                     want = f"exactly {lo}" if lo == hi else f"{lo} to {hi}"
                     self.error(f"{op} takes {want} operand{'s' if lo > 1 else ''}, got {len(operands)}")
                 return Operator(name, op, operands)
+            if m and m.group(1).upper() != "MOVE":
+                # 'target := Func(pins)': a function call, its result to target
+                return Parser(expr).box_at_start(m.group(1), name)
             return Move(name, expr)
         if call:
             return self.box(name, None)
@@ -492,6 +515,7 @@ class Context:
     var_types: dict          # lower-case variable name -> declared type text
     fb_sigs: dict            # upper-case FB name -> [(VAR_INPUT|VAR_OUTPUT|VAR_IN_OUT, name, type)]
     warnings: list
+    fn_sigs: dict = field(default_factory=dict)   # upper-case FUNCTION name -> (return type, sig)
 
 
 class Emitter:
@@ -530,6 +554,10 @@ class Emitter:
         if not net.rung:
             return
         series, outputs = Parser(" ".join(net.rung)).rung()
+        # The editor numbers a function box right after the network title, before the contacts
+        # in front of it (exports/ctrlx_function_calls.xml)
+        self.reserved = {id(b): self.new_id() for b in [*series, *outputs]
+                         if isinstance(b, Box) and self.is_function(b)}
         refs = self.series(series, [RAIL])
         if not outputs and not isinstance(series[-1], Box):
             raise LadderError("rung has no output: add '-> coil' (or end it with a box)")
@@ -649,13 +677,21 @@ class Emitter:
                     [n for k, n, _ in sig if k == "VAR_OUTPUT"])
         return STD_FBS.get(tu, (None, None))
 
+    def is_function(self, box: Box):
+        return box.target is not None or (
+            box.type is None and self.instance_type(box.instance) is None
+            and box.instance.upper() in self.ctx.fn_sigs)
+
     def box(self, box: Box, refs):
         """FB call. Timers: the rung drives IN and continues from Q. Every other FB: the rung
         drives EN and continues from ENO. All other pins are named."""
+        if self.is_function(box):
+            return self.function(box, refs)
         typ = box.type or self.instance_type(box.instance)
         if not typ:
-            raise LadderError(f"{box.instance}: not declared in this POU or a GVL; "
-                              "write it as instance:TYPE(...)")
+            raise LadderError(f"{box.instance}: not declared in this POU or a GVL, and not a "
+                              "FUNCTION in the files or a --lib file; declare the instance, write "
+                              "it as instance:TYPE(...), or give the function's declaration")
         timer = typ.upper() in TIMERS
         rung_in, rung_out = ("IN", "Q") if timer else ("EN", "ENO")
         if timer:
@@ -709,6 +745,93 @@ class Emitter:
         add_data(blk, data)
         return [(int(blk.get("localId")), rung_out)]
 
+    def function(self, box: Box, refs):
+        """Function call, as ctrlX PLC Engineering exports it (exports/ctrlx_function_calls.xml):
+        no instance, the result on an output pin named '   '. When the first input and the
+        result are BOOL there is no EN/ENO: the rung drives the first input and continues from
+        the result. Otherwise the rung drives EN and continues from ENO, and the result goes to
+        the target. VAR_IN_OUTs are inOutVariables. Every pin and the result must be
+        connected: CODESYS doesn't compile a function call with an open pin."""
+        name = box.instance
+        if name.upper() not in self.ctx.fn_sigs:
+            raise LadderError(f"{name}: unknown FUNCTION. Pass its declaration (a FUNCTION ... "
+                              "END_FUNCTION with its VAR_INPUT / VAR_IN_OUT / VAR_OUTPUT blocks) "
+                              "in the files, or with --lib for a library function")
+        ret, sig = self.ctx.fn_sigs[name.upper()]
+        params = [(k, n, t) for k, n, t in sig if k in ("VAR_INPUT", "VAR_IN_OUT")]
+        outs = [n for k, n, _ in sig if k == "VAR_OUTPUT"]
+        bool_form = (ret.strip().upper() == "BOOL" and params and params[0][0] == "VAR_INPUT"
+                     and params[0][2].strip().upper() == "BOOL")
+        if bool_form:
+            first = params[0][1]
+            if box.target is not None:
+                raise LadderError(f"{name} returns BOOL into the rung (first input and result are "
+                                  f"BOOL, so no EN/ENO); write '... {name}(...) -> {box.target}' "
+                                  f"instead of '{box.target} := {name}(...)'")
+            if any(p.lower() == first.lower() for p, _ in box.inputs):
+                raise LadderError(f"{name}: its first input {first} is the rung; put its condition "
+                                  f"in front of the call instead of {first} :=")
+            rung_type = params[0][2]
+            params = params[1:]
+            rung_in, rung_out = first, "   "
+        else:
+            rung_type, rung_in, rung_out = "BOOL", "EN", "ENO"
+
+        kinds = {n.lower(): (k, n, t) for k, n, t in params}
+        given = {}
+        for pin, expr in box.inputs:
+            if pin.lower() not in kinds:
+                what = "output (use =>)" if pin.lower() in (o.lower() for o in outs) else "input"
+                raise LadderError(f"{name} has no {what} '{pin}'")
+            given[pin.lower()] = expr
+        out_given = {}
+        for pin, var in box.outputs:
+            if pin.lower() not in (o.lower() for o in outs):
+                raise LadderError(f"{name} has no output '{pin}'"
+                                  + (" (inputs use :=)" if pin.lower() in kinds else ""))
+            out_given[pin.lower()] = var
+        missing = [f"{n} := ..." for _, n, _ in params if n.lower() not in given]
+        missing += [f"{n} => ..." for n in outs if n.lower() not in out_given]
+        if not bool_form and box.target is None:
+            missing.insert(0, f"the result (write 'x := {name}(...)')")
+        if missing:
+            raise LadderError(f"{name}: every pin of a function call must be connected; "
+                              f"missing {', '.join(missing)}")
+
+        wired = params                         # all connected (checked above)
+        lid = self.reserved.get(id(box)) or self.new_id()
+        ids = self.in_variables([(n, given[n.lower()]) for _, n, _ in wired])
+        blk = self.node("block", lid, typeName=name)
+        iv = sub(blk, "inputVariables")
+        self.connect(sub(iv, "variable", formalParameter=rung_in), refs)
+        for (k, n, _), rid in zip(wired, ids):
+            if k == "VAR_INPUT":
+                self.connect(sub(iv, "variable", formalParameter=n), [(rid, None)])
+        io = sub(blk, "inOutVariables")
+        for (k, n, _), rid in zip(wired, ids):
+            if k == "VAR_IN_OUT":
+                v = sub(io, "variable", formalParameter=n)
+                self.connect(v, [(rid, None)])
+                ET.SubElement(sub(v, "connectionPointOut"), q("expression"))
+        ov = sub(blk, "outputVariables")
+        sub(sub(ov, "variable", formalParameter=rung_out), "connectionPointOut")
+        if not bool_form:
+            cpo = sub(sub(ov, "variable", formalParameter="   "), "connectionPointOut")
+            ET.SubElement(cpo, q("expression")).text = box.target
+        for n in outs:
+            cpo = sub(sub(ov, "variable", formalParameter=n), "connectionPointOut")
+            ET.SubElement(cpo, q("expression")).text = out_given[n.lower()]
+
+        def ptype(k, t):
+            t = t.strip()
+            t = t.upper() if re.fullmatch(ELEMENTARY, t, re.I) else t
+            return f"{t}[REF]" if k == "VAR_IN_OUT" else t
+        # The rung pin first (EN, or the BOOL first input), then the wired pins; VAR_IN_OUTs as TYPE[REF]
+        types = [ptype("VAR_INPUT", rung_type)] + [ptype(k, t) for k, _, t in wired]
+        add_data(blk, [(CALLTYPE, "CallType", "function"), (PARAMTYPES, "InputParamTypes", " ".join(types))])
+        return [(int(blk.get("localId")), rung_out)]
+
+
 def build_ld(body, impl: str, ctx: Context, where: str):
     """Append an <LD> element for the ladder text `impl` to the POU <body>."""
     ld = sub(body, "LD")
@@ -716,6 +839,7 @@ def build_ld(body, impl: str, ctx: Context, where: str):
     sub(rail, "position", x=0, y=0)
     sub(rail, "connectionPointOut", formalParameter="none")
     em = Emitter(ld, ctx, where)
+    em.reserved = {}
     for n, net in enumerate(split_networks(impl), 1):
         try:
             em.network(net)
