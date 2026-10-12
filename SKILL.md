@@ -57,6 +57,11 @@ Put the source in `.st` files with the `END_...` keywords, as ctrlx-engineer des
    It prints each output as a boolean expression and warns about parallel branches the editor would rebuild in series. Check every coil against the intent.
 3. For a sequence, test it in the scan simulator, `scripts/ld_sim.py`. It also runs other FBs through Python models (fake axes, fake MC_ blocks), and reads struct members and library constants; see **Simulating FBs** in `references/ladder.md`. It reads enums, constants and initial values from the XML, runs the networks scan by scan with timers, and lets a script set inputs and assert on any variable. `references/examples/traffic_light/test_traffic.py` is a full test plan written that way; copy its shape. Validate against the PLCopen schema with ctrlx-engineer's `scripts/validate_plcopen.py`.
 4. Hand over the XML (Project → Import PLCopenXML…) with the ladder text, which is the readable form of the rungs, and list the build's warnings.
+5. **Loading it into ctrlX PLC Engineering.** The PLC Engineering REST API (ctrlx-engineer `scripts/plceng.py`, notes in its `references/plc-engineering-api.md`) can't create LD POUs ("Language type 'LD' is not supported"), and its import job reads files from the engineering PC's own disk. **When there's any ladder, the whole project goes in as the one XML from step 1:** don't push ST objects separately with `plceng.py push`. Run `plceng.py import-xml Project.xml`:
+   - When PLC Engineering runs on this machine, it imports directly. A localhost URL through an SSH tunnel doesn't count as this machine.
+   - When the user provides a shared folder, add `--shared <local-dir> <pc-dir>`.
+   - **Otherwise, prompt the user to load the export by hand** (Project → Import PLCopenXML…) and wait for their confirmation.
+   Then run `plceng.py build`, fix the errors and repeat until it compiles. With a manual import, ask the user to reimport after each fix.
 
 ## ctrlX library and motion lookups
 
