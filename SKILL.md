@@ -11,7 +11,7 @@ Write ladder as text, compile it to PLCopenXML with the ctrlx-engineer converter
 
 - **House rules come from ctrlx-engineer.** Read its `references/conventions.md` (naming, var block order, prefixes) and follow its design rules. Ladder changes the notation, not the rules: one writer per output, outputs written last, no edges in sequences, every FB called every scan.
 - **Read `references/ladder.md`** before writing any rung. It defines the language, the three box forms (compare, timer, FB on EN/ENO), and how each maps to the XML the editor expects.
-- **Sequences:** read ctrlx-engineer's `references/patterns.md` §1, then the **Sequences** section of `references/ladder.md`. Jumps and transitions write `_eNextState`, and a `-> _eState := _eNextState` network commits it after each of those two sections. Start from a worked example: `references/examples/FB_CycleLD.st`, or `references/examples/traffic_light/` (design doc, FB and calling program).
+- **Sequences:** read ctrlx-engineer's `references/patterns.md` §1, then the **Sequences** section of `references/ladder.md`. Transitions, then jumps, write `_eNextState`, and a `-> _eState := _eNextState` network commits it after each of those two sections, so a jump overrides a transition. Start from a worked example: `references/examples/FB_CycleLD.st`, or `references/examples/traffic_light/` (design doc, FB and calling program).
 
 ## Writing
 

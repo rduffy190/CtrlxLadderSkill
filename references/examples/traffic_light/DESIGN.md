@@ -84,7 +84,7 @@ No state lights green or yellow on both lanes, so a conflicting green can't come
 
 - **Power-up starts in all-red.** `AllRedToA` is enum value 0, the default, so the first thing the light does is hold both lanes red for 2 s and then give lane A green. Nothing has to run on the first scan.
 - **Unknown state:** any value outside the enum (e.g. after an online change) goes to `AllRedToA`. That's this design's `CASE ELSE`. There's no `Faulted` state, because there's no fault input and no reset button to leave it.
-- **No jumps section.** There are no fault, abort or timeout conditions in this test, so section 1 of the house structure is empty, along with its commit.
+- **No jumps section.** There are no fault, abort or timeout conditions in this test, so section 2 of the house structure is empty, along with its commit.
 - **Fail state is steady red on both lanes.**
     - *Inside the program:* the only fault is an invalid state value, and it goes to all-red (`AllRedToA`).
     - *Controller stop or crash:* the PLC can't drive anything, and its outputs fall to FALSE, which would leave every lamp dark. So the red lamps also need a hardware path. `bDO_SignalOk` drives a "signal OK" relay. Each red lamp is powered by its PLC output **or** a normally closed contact of that relay, in parallel. While the program runs, the relay is energised, its contacts are open, and the PLC alone drives red. When the PLC stops, the relay drops out and every red comes on. The relay also needs a contact that breaks the yellow and green supply, so that a frozen output can't hold a green.
@@ -93,7 +93,7 @@ No state lights green or yellow on both lanes, so a conflicting green can't come
 
 ## Implementation plan
 
-The FB is written in ladder with the house sequence structure. Jumps and transitions write `_eNextState`, and a commit network moves it into `_eState` after the transitions section.
+The FB is written in ladder with the house sequence structure. Transitions (and jumps, when there are any) write `_eNextState`, and a commit network moves it into `_eState` after the transitions section.
 
 | Object | Language | Contents |
 | --- | --- | --- |
@@ -107,9 +107,9 @@ Networks of `FB_TrafficLight`, in order:
 | Section | Networks |
 | --- | --- |
 | Inputs | `Ped request`: `bPedButton -> S:_bPedRequest` |
-| 1. Jumps | none (see above) |
-| 2. Transitions | One per arrow in the state machine, e.g. `[_eState = E_TrafficState.GreenA] _fbStepTimer.Q (bCarB \| _bPedRequest) -> _eNextState := E_TrafficState.YellowA`, then the invalid-state network `[_eState > E_TrafficState.YellowB] -> _eNextState := E_TrafficState.AllRedToA` |
+| 1. Transitions | One per arrow in the state machine, e.g. `[_eState = E_TrafficState.GreenA] _fbStepTimer.Q (bCarB \| _bPedRequest) -> _eNextState := E_TrafficState.YellowA`, then the invalid-state network `[_eState > E_TrafficState.YellowB] -> _eNextState := E_TrafficState.AllRedToA` |
 | Commit | `-> _eState := _eNextState` |
+| 2. Jumps | none (see above) |
 | Decode | One network per state, `[_eState = E_TrafficState.GreenA] -> _bStGreenA`, so that entry actions and lamps use contacts. Compares in parallel branches import as an AND |
 | 3. On change | `[_eState <> _eLastState] -> _bStateChanged`, one entry network per step time (`_tStepTime := GREEN_MIN_TIME` / `YELLOW_TIME` / `ALL_RED_TIME`), the entry of either green resets the request (`-> R:_bPedRequest`), then `-> _eLastState := _eState` |
 | 4. Cyclic | Step timer inline (the rung is its IN) `/_bStateChanged _fbStepTimer(PT := _tStepTime)`, then one coil per lamp from the decoded state BOOLs, e.g. `(_bStAllRedToA | _bStAllRedToB | _bStGreenB | _bStYellowB) -> bRedA`, then `-> eState := _eState` |

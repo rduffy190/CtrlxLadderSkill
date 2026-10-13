@@ -1,5 +1,5 @@
 // FB_CycleLD: one clamp/work/unclamp cycle per Execute, with abort, step timeouts and latched faults.
-// Ladder version of FB_Cycle: jumps -> commit -> transitions -> commit -> state decode -> on change
+// Ladder version of FB_Cycle: transitions -> commit -> jumps -> commit -> state decode -> on change
 // -> FB calls -> outputs. After the decode the logic uses contacts, never compares in parallel.
 FUNCTION_BLOCK FB_CycleLD
 VAR_INPUT
@@ -23,13 +23,13 @@ VAR_OUTPUT
 END_VAR
 VAR
     _eState         : E_CycleState; // the state; eState is only a copy for the caller
-    _eNextState     : E_CycleState; // written by jumps/transitions, committed to _eState after each section
+    _eNextState     : E_CycleState; // written by transitions/jumps, committed to _eState after each section
     _eLastState     : E_CycleState;
     _bStateChanged  : BOOL;         // TRUE on the scan the state changed (on-change section)
     _uiFaultCode    : UINT;
     _eFaultState    : E_CycleState;
     _tStepTimeout   : TIME;         // timeout of the current step, T#0S = none
-    _bStIdle        : BOOL;         // state decoded after the commit: one BOOL per state
+    _bStIdle        : BOOL;         // state decoded after the last commit: one BOOL per state, held into the next scan's jumps
     _bStClamping    : BOOL;
     _bStWorking     : BOOL;
     _bStUnclamping  : BOOL;
@@ -48,29 +48,7 @@ VAR CONSTANT
     FAULT_INVALID_STATE : UINT := 99;
 END_VAR
 
-// ===== 1. Jumps: highest priority first, each one locks out the ones below =====
-NETWORK J1 External fault
-    [_eState <> E_CycleState.Faulted] bExternalFault
-        -> _eNextState := E_CycleState.Faulted, _uiFaultCode := FAULT_EXTERNAL, _eFaultState := _eState
-
-NETWORK J2 Step timeout
-// The step timer belongs to the current step, so this one rung covers every step's timeout
-    [_eState <> E_CycleState.Faulted] /bExternalFault _fbStepTimer.Q
-        -> _eNextState := E_CycleState.Faulted, _uiFaultCode := FAULT_STEP_TIMEOUT, _eFaultState := _eState
-
-NETWORK J3 Abort while clamping
-// One compare per rung: abort in two states is two networks (neither state is Faulted)
-    [_eState = E_CycleState.Clamping] /bExternalFault /_fbStepTimer.Q bAbort
-        -> _eNextState := E_CycleState.Aborting
-
-NETWORK J4 Abort while working
-    [_eState = E_CycleState.Working] /bExternalFault /_fbStepTimer.Q bAbort
-        -> _eNextState := E_CycleState.Aborting
-
-NETWORK Commit jumps
-    -> _eState := _eNextState
-
-// ===== 2. Transitions only =====
+// ===== 1. Transitions only =====
 NETWORK T Idle -> Clamping
     [_eState = E_CycleState.Idle] bExecute /bAbort -> _eNextState := E_CycleState.Clamping
 
@@ -99,6 +77,24 @@ NETWORK T Invalid state -> Faulted
         -> _eNextState := E_CycleState.Faulted, _uiFaultCode := FAULT_INVALID_STATE, _eFaultState := _eState
 
 NETWORK Commit transitions
+    -> _eState := _eNextState
+
+// ===== 2. Jumps: override the transitions, highest priority first, each one locks out the ones below =====
+NETWORK J1 External fault
+    [_eState <> E_CycleState.Faulted] bExternalFault
+        -> _eNextState := E_CycleState.Faulted, _uiFaultCode := FAULT_EXTERNAL, _eFaultState := _eLastState
+
+NETWORK J2 Step timeout
+// The step timer belongs to the step the scan started in, so this one rung covers every step's timeout
+    [_eState <> E_CycleState.Faulted] /bExternalFault _fbStepTimer.Q
+        -> _eNextState := E_CycleState.Faulted, _uiFaultCode := FAULT_STEP_TIMEOUT, _eFaultState := _eLastState
+
+NETWORK J3 Abort while clamping or working
+// Decode bits still hold the step the scan started in, not one a transition just chose
+    (_bStClamping | _bStWorking) /bExternalFault /_fbStepTimer.Q bAbort
+        -> _eNextState := E_CycleState.Aborting
+
+NETWORK Commit jumps
     -> _eState := _eNextState
 
 // ===== State decode: one compare per rung, so later rungs use contacts =====
