@@ -9,7 +9,7 @@ Import it from a test script:
     sim.v["bGreenB"], sim.v["_eState"]  # read any variable
 
 Each scan runs the networks top to bottom, as the PLC does. Enum values, VAR CONSTANTs and
-initial values are read from the XML. Supported: contacts (not edge contacts), coils
+initial values are read from the XML. Supported: contacts (including rising/falling edge contacts), coils
 (normal, negated, set, reset), compare boxes (EQ/NE/GT/GE/LT/LE), MOVE, ADD/SUB/MUL/DIV, SEL/MUX/LIMIT,
 <type>_TO_<type> conversions, TON, and function calls through models. Anything
 else raises, so a test can't pass by silently skipping logic.
@@ -116,6 +116,7 @@ class Sim:
             raise ValueError(f"no POU {pou} in {path}")
         self.ld = list(node.find(f"{P}body/{P}LD"))
         self.v, self.consts, self.timers = {}, {}, {}
+        self.edge_prev = {}     # contact localId -> operand value at the previous scan
         blocks = list(node.find(f"{P}interface"))
         # VAR CONSTANT is a constant localVars block. VAR_IN_OUT CONSTANT is also flagged
         # constant="true" but is a read-only reference with no initial values: a variable.
@@ -203,9 +204,13 @@ class Sim:
             elif t == "inVariable":
                 flow[lid] = self.literal(e.findtext(f"{P}expression"))
             elif t == "contact":
-                if e.get("edge", "none") != "none":
-                    raise NotImplementedError("edge contacts aren't simulated")
                 x = bool(self.literal(e.findtext(f"{P}variable")))
+                edge = e.get("edge", "none")
+                if edge != "none":
+                    # R_TRIG/F_TRIG semantics: the operand is sampled every scan, powered or not,
+                    # and the memory starts FALSE
+                    prev, self.edge_prev[lid] = self.edge_prev.get(lid, False), x
+                    x = (x and not prev) if edge == "rising" else (prev and not x)
                 flow[lid] = bool(source(e.find(f"{P}connectionPointIn"))) and (x != (e.get("negated") == "true"))
             elif t == "coil":
                 on, var = bool(source(e.find(f"{P}connectionPointIn"))), self.key(e.findtext(f"{P}variable"))

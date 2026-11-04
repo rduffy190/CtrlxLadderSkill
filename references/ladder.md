@@ -46,6 +46,10 @@ Power flows left to right. Elements written next to each other are in **series**
 
 Operands can be anything that names a BOOL: `GVL_IO.bDI_Start`, `aBits[3]`, `stStatus.bReady`, `wStatus.3`, `TRUE`.
 
+**Put a parallel group first in the rung.** The CODESYS LD editor cannot paint a group that has a contact in front of it: opening the POU fails with "Non-toplevel demux may not have source", naming the network. `bEnable (bA | bB) -> y` is the same logic as `(bA | bB) bEnable -> y` (AND is commutative), and the second form paints. The compiler therefore moves the first group to the front of the rung by itself (`tests/features/GroupFirst.st`), so either spelling works, but write it group-first so the text matches the picture. It warns, and leaves the rung alone, when a timer / FB / function box is in front of the group (moving it would change what the group gates) or when a rung has a second group: decode one group into a BOOL coil in an earlier network and use that contact.
+
+**Don't mix assignments and coils in one rung.** A rung such as `cond -> a := 1, b := 2, R:x, S:y` fails to paint ("Non-toplevel demux may not have source"). Any number of outputs of one kind (all boxes, or all coils) paints fine; it is the mix of assignments (MOVE, math, FB calls) and coils (plain, negated, `S:`, `R:`) that does not. The compiler splits a mixed rung into several networks that repeat the conditions: boxes first, then coils, then jumps, and appends " (1/2)" to the title (`tests/features/SplitOutputs.st`). A rung is left unsplit, with a warning, when one of its outputs changes a variable its own conditions read (the later networks would see the new value): write the box outputs first and the coil last, or split it by hand.
+
 **Outputs** after `->` are all in parallel on the rung's end:
 
 | Text | Element |

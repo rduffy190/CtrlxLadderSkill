@@ -163,6 +163,70 @@ assert r.returncode != 0 and "MUX takes 2 to 99 operands, got 100" in r.stderr, 
 print("PASS MUX with 98 inputs compiles, 99 is rejected")
 PY
 
+# Edge contacts: P: is TRUE for one scan on a rising edge, N: on a falling edge
+python3 - "$OUT" "$ST" "$LAD/scripts" <<'PY'
+import os, subprocess, sys
+out, st, lad = sys.argv[1:4]
+src = """PROGRAM EdgeT
+VAR
+ bIn : BOOL;
+ bUp : BOOL;
+ bDown : BOOL;
+ bLatch : BOOL;
+END_VAR
+NETWORK Up
+    P:bIn -> bUp
+NETWORK Down
+    N:bIn -> bDown
+NETWORK Latch
+    P:bIn -> S:bLatch
+END_PROGRAM
+"""
+open(os.path.join(out, "EdgeT.st"), "w").write(src)
+r = subprocess.run([sys.executable, os.path.join(st, "st_to_plcopenxml.py"), "EdgeT.st", "-o", "edge.xml"],
+                   cwd=out, capture_output=True, text=True)
+assert r.returncode == 0, r.stderr
+sys.path.insert(0, lad)
+from ld_sim import Sim
+s = Sim(os.path.join(out, "edge.xml"), "EdgeT", scan_ms=10)
+def step(**kw):
+    s.v.update(kw); s.scan(); return s.v["bUp"], s.v["bDown"]
+assert step() == (False, False)
+assert step(bIn=True) == (True, False)       # rising edge: one scan
+assert step() == (False, False)              # held: no edge
+assert step(bIn=False) == (False, True)      # falling edge: one scan
+assert step() == (False, False)
+assert s.v["bLatch"] is True                 # the rising edge set the latch
+print("PASS sim edge contacts (P: and N:)")
+PY
+
+# A parallel group after a contact does not paint in the LD editor ("Non-toplevel demux may not have source"):
+# the compiler must move the group to the front of the rung (fed from the left rail)
+build groupfirst "$LAD/tests/features" GroupFirst.st
+python3 - "$OUT/groupfirst.xml" <<'PY'
+import sys, xml.etree.ElementTree as ET
+P = "{http://www.plcopen.org/xml/tc6_0200}"
+root = ET.parse(sys.argv[1]).getroot()
+contacts = {c.findtext(P + "variable"): [x.get("refLocalId") for x in c.iter(P + "connection")]
+            for c in root.iter(P + "contact")}
+assert contacts["bA"] == ["0"] and contacts["bB"] == ["0"], contacts      # the group branches start at the rail
+assert contacts["bEnable"] != ["0"], contacts                              # the contact now follows the group
+print("PASS parallel group moved to the front of the rung")
+PY
+
+# A rung that mixes assignments and coils does not paint either: the compiler splits it into several networks
+build splitoutputs "$LAD/tests/features" SplitOutputs.st
+python3 - "$OUT/splitoutputs.xml" <<'PY'
+import sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+titles = [" ".join("".join(e.itertext()).split()) for e in root.iter("{http://www.plcopen.org/xml/tc6_0200}alternativeText")]
+want = ["Five boxes and two coils (becomes 2 networks) (1/2)", "Five boxes and two coils (becomes 2 networks) (2/2)",
+        "Three MOVEs stay in one rung",
+        "One box and one coil (mixed kinds: split) (1/2)", "One box and one coil (mixed kinds: split) (2/2)"]
+assert titles == want, titles
+print("PASS rungs that mix assignments and coils are split into networks")
+PY
+
 # ld_diff must notice a real difference (a changed operand)
 sed 's/out2 := SUB(in1, in2)/out2 := SUB(in2, in1)/' "$LAD/tests/features/ExampleMath.st" > "$OUT/ExampleMathBad.st"
 (cd "$OUT" && python3 "$ST/st_to_plcopenxml.py" ExampleMathBad.st -o "$OUT/mathbad.xml" 2>/dev/null)

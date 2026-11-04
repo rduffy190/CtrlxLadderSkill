@@ -510,6 +510,31 @@ def add_data(parent, entries):
         ET.SubElement(d, tag).text = value
 
 
+def norm_names(*texts):
+    """Lower-case names in the texts, array indexes dropped (a[3].x -> a.x): for the output-split check."""
+    out = set()
+    for text in texts:
+        text = re.sub(r"\[[^\]]*\]", "", text or "")
+        for m in re.finditer(r"[A-Za-z_][A-Za-z_0-9]*(?:\.[A-Za-z_][A-Za-z_0-9]*)*", text):
+            out.add(m.group(0).lower())
+    return out
+
+
+def conflicts(written, read):
+    return written == read or read.startswith(written + ".") or written.startswith(read + ".")
+
+
+def output_writes(out):
+    """Texts naming the variables an output writes."""
+    if isinstance(out, Coil):
+        return [out.var]
+    if isinstance(out, (Move, Operator)):
+        return [out.target]
+    if isinstance(out, Box):
+        return [v for _, v in out.outputs] + ([out.target] if out.target else [])
+    return []
+
+
 @dataclass
 class Context:
     var_types: dict          # lower-case variable name -> declared type text
@@ -544,25 +569,99 @@ class Emitter:
     # -- networks
 
     def network(self, net: Network):
+        parsed = Parser(" ".join(net.rung)).rung() if net.rung else None
+        if parsed is None:
+            self.network_head(net, net.title, True)
+            return
+        series, outputs = parsed
+        series = self.group_first(series)
+        if not outputs and not isinstance(series[-1], Box):
+            self.network_head(net, net.title, True)
+            raise LadderError("rung has no output: add '-> coil' (or end it with a box)")
+        chunks = self.split_outputs(series, outputs)
+        for k, chunk in enumerate(chunks):
+            title = net.title if len(chunks) == 1 else f"{net.title} ({k + 1}/{len(chunks)})"
+            self.network_head(net, title, k == 0)
+            # The editor numbers a function box right after the network title, before the contacts
+            # in front of it (exports/ctrlx_function_calls.xml)
+            self.reserved = {id(b): self.new_id() for b in [*series, *chunk]
+                             if isinstance(b, Box) and self.is_function(b)}
+            refs = self.series(series, [RAIL])
+            for out in chunk:
+                self.output(out, refs)
+
+    def network_head(self, net: Network, title, first):
         el = self.node("comment", height=0, width=0)
-        xhtml(sub(el, "content"), "\n".join(net.comment))
-        if net.label:
+        xhtml(sub(el, "content"), "\n".join(net.comment if first else []))
+        if net.label and first:
             self.node("label", label=net.label)
         el = self.node("vendorElement")
-        xhtml(sub(el, "alternativeText"), net.title)
+        xhtml(sub(el, "alternativeText"), title)
         add_data(el, [(ELEMENTTYPE, "ElementType", "networktitle")])
-        if not net.rung:
-            return
-        series, outputs = Parser(" ".join(net.rung)).rung()
-        # The editor numbers a function box right after the network title, before the contacts
-        # in front of it (exports/ctrlx_function_calls.xml)
-        self.reserved = {id(b): self.new_id() for b in [*series, *outputs]
-                         if isinstance(b, Box) and self.is_function(b)}
-        refs = self.series(series, [RAIL])
-        if not outputs and not isinstance(series[-1], Box):
-            raise LadderError("rung has no output: add '-> coil' (or end it with a box)")
-        for out in outputs:
-            self.output(out, refs)
+
+    OUT_MAX = 1000  # outputs of one kind kept in one rung: the count does not matter, the mix does (user-tested)
+
+    def split_outputs(self, series, outputs):
+        """The LD editor cannot paint a rung whose outputs are of different kinds (boxes such as MOVE and math
+        next to coils such as S:/R:): "Non-toplevel demux may not have source". Any number of outputs of one
+        kind stays in one rung; a mix is split into several networks that repeat the rung's conditions:
+        boxes first, then coils, then jumps. The title gets " (1/2)" appended. The split keeps
+        the meaning, unless an output changes a variable the conditions read (then the later networks would
+        see the new value): that rung is left alone with a warning."""
+        boxes = [o for o in outputs if isinstance(o, (Move, Operator, Box))]
+        coils = [o for o in outputs if isinstance(o, Coil)]
+        others = [o for o in outputs if isinstance(o, (Jump, Return))]
+        if sum(bool(x) for x in (boxes, coils, others)) <= 1 and len(outputs) <= self.OUT_MAX:
+            return [outputs]
+        n = self.OUT_MAX
+        chunks = ([boxes[i:i + n] for i in range(0, len(boxes), n)] +
+                  [coils[i:i + n] for i in range(0, len(coils), n)] + [[o] for o in others])
+        reads = set()
+        for node in walk(series):
+            texts = []
+            if isinstance(node, Contact):
+                texts = [node.var]
+            elif isinstance(node, Compare):
+                texts = [node.lhs, node.rhs]
+            elif isinstance(node, Box):
+                texts = [node.instance] + [e for _, e in node.inputs]
+            for text in texts:
+                reads.update(norm_names(text))
+        written = set()
+        for chunk in chunks:
+            if written and any(conflicts(w, r) for w in written for r in reads):
+                self.ctx.warnings.append(
+                    f"{self.where}: this rung has many or mixed outputs, which the editor cannot paint, but an "
+                    "output changes a variable its own conditions read, so it cannot be split safely. "
+                    "Put the outputs that matter first or split it by hand into several networks")
+                return [outputs]
+            for out in chunk:
+                written.update(norm_names(*output_writes(out)))
+        return chunks
+
+    def group_first(self, series):
+        """The LD editor cannot paint 'contact (a | b) -> box' ("Non-toplevel demux may not have source"):
+        a parallel group that has something in front of it fails to open. A group at the start of the rung
+        (fed from the left rail) paints fine, and AND is commutative, so the first group is moved to the
+        front. It stays where it is, with a warning, when a timer / FB / function box is in front of it
+        (moving it would change what it gates). Further groups are warned about: decode them into a BOOL."""
+        idx = [i for i, x in enumerate(series) if isinstance(x, Parallel)]
+        if not idx:
+            return series
+        first = idx[0]
+        if first > 0:
+            if any(isinstance(x, Box) for x in series[:first]):
+                self.ctx.warnings.append(
+                    f"{self.where}: parallel group after a box; the editor may fail to paint it "
+                    "(decode the group into a BOOL coil first and use that contact)")
+            else:
+                series = [series[first]] + series[:first] + series[first + 1:]
+                idx = [0] + [i for i in idx[1:]]
+        for j in idx[1:]:
+            self.ctx.warnings.append(
+                f"{self.where}: second parallel group in one rung; the editor may fail to paint it "
+                "(decode one group into a BOOL coil first and use that contact)")
+        return series
 
     def series(self, items, refs):
         for item in items:

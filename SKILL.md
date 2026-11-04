@@ -49,7 +49,9 @@ Put the source in `.st` files with the `END_...` keywords, as ctrlx-engineer des
    ```bash
    python3 <ctrlx-engineer-dir>/scripts/st_to_plcopenxml.py E_X.st GVL_IO.st FB_X.st PRG_X.st -o Project.xml
    ```
-   Add `--lib references/lib_sigs/CXA_Motion_ML.st` (or your own declarations file) when rungs call library functions. The converter finds this skill's compiler next to it in the skills folder. A ladder error names the network and points at the rung.
+   Add `--lib references/lib_sigs/CXA_Motion_ML.st` (or your own declarations file) when rungs call library functions. The converter finds this skill's compiler next to it in the skills folder. A ladder error names the network and points at the rung. (It also finds the compiler when the skills in `~/.claude/skills` are symlinks to repositories elsewhere; if it still says the skill isn't installed, put `<codesys-lad-dir>/scripts` on `PYTHONPATH`.)
+   **Compiling and importing do not prove the editor can open the POU.** The editor paints networks that the compiler and the simulator accept happily; the one known case is a parallel group with a contact in front of it (see **Put a parallel group first in the rung** in `references/ladder.md`, which the compiler now fixes). When the user reports an editor error naming a network, count `NETWORK`s from 1 in the source and look at that rung's shape first.
+   **A POU that no program calls is not compiled**, so an import "builds with 0 errors" even when its code is wrong. To really check library pins and types, call the program from `PLC_PRG` and build again.
 2. Read it back:
    ```bash
    python3 <codesys-lad-dir>/scripts/ld_trace.py Project.xml
