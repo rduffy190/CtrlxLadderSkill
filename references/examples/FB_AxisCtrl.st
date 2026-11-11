@@ -1,6 +1,5 @@
-// FB_AxisCtrl in ladder, from the PressSystem project. Verified 2026-10-10: imported, compiled and run in
-// ctrlX PLC Engineering 4.6 on ctrlX COREvirtual axes as part of the press system. Also scan-tested in
-// ld_sim with fake MC_ models (press_tests/test_axisctrl.py).
+// FB_AxisCtrl in ladder. Verified: imported, compiled and run in ctrlX PLC Engineering 4.6 on ctrlX
+// COREvirtual axes. Also scan-tested in ld_sim with fake MC_ models (axisctrl_tests/test_axisctrl.py).
 // FB_AxisCtrl: one ctrlX axis through CXA_PLCopen: power, absolute move, halt, reset and status.
 // Latches the first error with its ctrlX diagnosis until reset. Not a sequence; the caller drives it.
 FUNCTION_BLOCK FB_AxisCtrl

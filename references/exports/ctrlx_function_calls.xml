@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <project xmlns="http://www.plcopen.org/xml/tc6_0200">
   <fileHeader companyName="Rexroth" productName="ctrlX PLC Engineering" productVersion="ctrlX PLC 4.6.2" creationDateTime="2026-10-12T10:04:03.9540356" />
-  <contentHeader name="Claude.project" modificationDateTime="2026-10-12T09:57:30.7744462">
+  <contentHeader name="Example.project" modificationDateTime="2026-10-12T09:57:30.7744462">
     <coordinateInfo>
       <fbd>
         <scaling x="1" y="1" />

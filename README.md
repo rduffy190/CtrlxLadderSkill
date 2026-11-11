@@ -1,8 +1,8 @@
 # codesys-lad
 
-A [Claude Code](https://claude.com/claude-code) skill for writing **ladder diagram (LD)** for Bosch Rexroth **ctrlX CORE** (ctrlX PLC Engineering) and other CODESYS V3 controllers.
+An agent skill (`SKILL.md` format) for writing **ladder diagram (LD)** for Bosch Rexroth **ctrlX CORE** (ctrlX PLC Engineering) and other CODESYS V3 controllers.
 
-The CODESYS LD editor can't paste text, so Claude writes ladder in a small plain-text rung language and compiles it into a PLCopenXML file for **Project → Import PLCopenXML…**:
+The CODESYS LD editor can't paste text, so ladder is written in a small plain-text rung language and compiled into a PLCopenXML file for **Project → Import PLCopenXML…**:
 
 ```
 NETWORK Start/stop seal-in
@@ -22,25 +22,24 @@ It handles contacts, coils, set/reset, compares, MOVE, operator boxes (ADD/SUB/M
 
 ## Requires ctrlx-engineer
 
-This skill is an add-on to [ctrlx-engineer](https://github.com/rduffy190/CtrlxPlcSkill) and doesn't work without it. ctrlx-engineer provides:
+This skill is an add-on to the `ctrlx-engineer` skill and doesn't work without it. ctrlx-engineer provides:
 
 - the house rules (naming, sequence structure) this skill follows;
 - `st_to_plcopenxml.py`, the converter that builds the import file and loads this skill's compiler for ladder POUs;
-- the ctrlX library and Motion App references used to look up FB pins.
+- the ctrlX library and Motion App references used to look up FB pins;
+- `ST_Dynamics.st`, the type the ladder `FB_AxisCtrl` example uses.
 
 ## Install
 
-Clone both into your Claude Code skills folder, side by side, under these exact names:
+Put both folders side by side in the skills directory your agent loads skills from, under the folder names `ctrlx-engineer` and `codesys-lad`, then check the install:
 
 ```bash
-git clone git@github.com:rduffy190/CtrlxPlcSkill.git    ~/.claude/skills/ctrlx-engineer
-git clone git@github.com:rduffy190/CtrlxLadderSkill.git ~/.claude/skills/codesys-lad
-~/.claude/skills/codesys-lad/tests/run.sh               # should end with ALL OK
+<skills-dir>/codesys-lad/tests/run.sh      # should end with ALL OK (bash; Git Bash on Windows)
 ```
 
-Ask Claude for ladder ("write the start/stop logic in ladder") and it's used.
+The agent picks the skill up from the `SKILL.md` description when asked for ladder ("write the start/stop logic in ladder").
 
-Requirements: Python 3.10+, and `lxml` for the schema check that `tests/run.sh` runs (`pip install lxml`).
+Requirements: Python 3.10+, and `lxml` for the schema check that `tests/run.sh` runs (`pip install lxml`). On Windows, run the scripts with `python` or `py -3` where the docs say `python3`.
 
 ## What's inside
 
@@ -50,7 +49,8 @@ Requirements: Python 3.10+, and `lxml` for the schema check that `tests/run.sh` 
 | `references/ladder.md` | The ladder text language, the three box forms, ladder sequences, and the XML mapping |
 | `references/examples/FB_CycleLD.st` | ctrlx-engineer's clamp/work/unclamp sequence, in ladder |
 | `references/examples/traffic_light/` | A complete example: design doc, ladder FB and program, and a test plan |
-| `references/examples/FB_AxisCtrl.st`, `press_tests/` | A ladder ctrlX MC_ axis wrapper (power, move, halt, reset, latched diagnosis) and its simulator test with fake MC_ blocks |
+| `references/examples/FB_AxisCtrl.st`, `axisctrl_tests/` | A ladder ctrlX MC_ axis wrapper (power, move, halt, reset, latched diagnosis) and its simulator test with fake MC_ blocks |
+| `references/lib_sigs/` | Declarations of library functions (e.g. `ML_` motion functions) for `--lib` |
 | `references/exports/` | Real LD exports used as format references: a CODESYS V3.5 SP15 export (third-party) and ctrlX PLC Engineering exports of the operator boxes and compares |
 | `scripts/ladder.py` | The compiler (loaded by ctrlx-engineer's converter) |
 | `scripts/ld_trace.py` | Reads LD from any PLCopenXML file back as one boolean expression per output |
@@ -61,8 +61,8 @@ Requirements: Python 3.10+, and `lxml` for the schema check that `tests/run.sh` 
 ## Building and checking an import file yourself
 
 ```bash
-python3 ~/.claude/skills/ctrlx-engineer/scripts/st_to_plcopenxml.py E_State.st GVL_IO.st FB_Seq.st PRG_Main.st -o Project.xml
-python3 ~/.claude/skills/codesys-lad/scripts/ld_trace.py Project.xml
+python3 <skills-dir>/ctrlx-engineer/scripts/st_to_plcopenxml.py E_State.st GVL_IO.st FB_Seq.st PRG_Main.st -o Project.xml
+python3 <skills-dir>/codesys-lad/scripts/ld_trace.py Project.xml
 ```
 
 The tracer also works on ladder exported from CODESYS, which makes it handy for comparing what the editor did with what was meant.

@@ -218,7 +218,7 @@ Use ladder when the user asks for it, or for logic electricians read online: int
 
 ## Converting ST to ladder (all-ladder projects)
 
-When a customer wants "all ladder unless it must be ST", these points have been worked out:
+When a project calls for "all ladder unless it must be ST", these points have been worked out:
 
 - **Math, selection and type conversion are ladder.** The operator boxes (see **Operator boxes**) cover formulas like linear scaling with a raw INT: `INT_TO_REAL`, then SUB, MUL and a guarded DIV, one box per network through intermediate variables. `SEL`/`MUX`/`LIMIT` replace entry-MOVE workarounds and clamping logic. Compute targets directly (e.g. advance to `ADD(home, pitch)` with an absolute move) instead of designing the math away with relative moves. A MOVE's value still goes into the XML as raw text, so keep it to a variable, a struct member or a constant, never an expression.
 - **What still stays ST:** loops and string handling. Put these in a small **ST function block** called on EN/ENO, or an ST FUNCTION called from a rung (see **Function calls**), with the reason in its header comment.
@@ -228,7 +228,7 @@ When a customer wants "all ladder unless it must be ST", these points have been 
 - **Entry MOVEs that depend on a latch** (`_stSp := stSp`, then `_lrTarget := _stSp.x`) go in **separate networks**, latch first. Don't rely on the order of parallel outputs on one rung.
 - **A jump that applies in several states** (e.g. overpressure only while closing): use the decode bits. They still hold the state the scan started in, because the decode comes after the last commit. That's the step the jump's condition belongs to, not one a transition has just chosen: `(_bStApproaching | _bStPressing) _bOverPressure -> _eNextState := ...`. A jump from any state still tests `[_eState <> E_X.Faulted]`, so a `Faulted` set by the transitions' `CASE ELSE` isn't overwritten.
 - **Re-edge a move FB between consecutive move steps**: `/_bStateChanged (_bStA | _bStB) -> _bMove`.
-- `references/examples/FB_AxisCtrl.st` is a complete ladder MC_ axis wrapper, and `references/examples/press_tests/` has its simulator test with fake MC_ models.
+- `references/examples/FB_AxisCtrl.st` is a complete ladder MC_ axis wrapper, and `references/examples/axisctrl_tests/` has its simulator test with fake MC_ models.
 
 ## Simulating FBs, structs and library constants (ld_sim)
 

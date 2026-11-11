@@ -1,6 +1,6 @@
 """Scan-by-scan test of the ladder FB_AxisCtrl (../FB_AxisCtrl.st) with fake CXA_PLCopen FBs.
 
-    python3 test_axisctrl.py <built.xml>     (tests/run.sh builds it from ST_Dynamics.st + ../FB_AxisCtrl.st)
+    python3 test_axisctrl.py <built.xml>     (tests/run.sh builds it from ctrlx-engineer's ST_Dynamics.st + ../FB_AxisCtrl.st)
 
 Also a worked example of ld_sim models: one Python class per FB type, struct members, nested
 outputs (ErrorIdent.Additional1) and library constants.

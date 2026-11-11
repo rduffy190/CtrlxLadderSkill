@@ -8,6 +8,8 @@
 #  - rebuilds the function-call export (user FUNCTIONs, ML_AxsPower via --lib) and diffs it.
 # Exits non-zero on the first failure.
 set -euo pipefail
+# On Windows, python3 is often only the Microsoft Store alias: fall back to python.
+python3 -c "" 2>/dev/null || python3() { python "$@"; }
 LAD="$(cd "$(dirname "$0")/.." && pwd)"
 ST="$LAD/../ctrlx-engineer/scripts"
 OUT="$(mktemp -d)"
@@ -49,8 +51,8 @@ got = [s.v[s.key(k)] for k in ("out1", "out2", "out3", "out4", "equal", "neq", "
 assert got == [5, 9, -14, -3, False, True, True, False], got
 print("PASS sim ADD/SUB/MUL/DIV (DIV truncates toward zero) and compares")
 PY
-build axisctrl "$LAD/references/examples" press_tests/ST_Dynamics.st FB_AxisCtrl.st
-python3 "$LAD/references/examples/press_tests/test_axisctrl.py" "$OUT/axisctrl.xml"
+build axisctrl "$LAD/references/examples" "$ST/../references/examples/ST_Dynamics.st" FB_AxisCtrl.st
+python3 "$LAD/references/examples/axisctrl_tests/test_axisctrl.py" "$OUT/axisctrl.xml"
 
 build simmodels "$LAD/tests/features" FB_SimModels.st
 python3 - "$LAD/scripts" "$OUT/simmodels.xml" <<'PY'

@@ -49,7 +49,7 @@ Put the source in `.st` files with the `END_...` keywords, as ctrlx-engineer des
    ```bash
    python3 <ctrlx-engineer-dir>/scripts/st_to_plcopenxml.py E_X.st GVL_IO.st FB_X.st PRG_X.st -o Project.xml
    ```
-   Add `--lib references/lib_sigs/CXA_Motion_ML.st` (or your own declarations file) when rungs call library functions. The converter finds this skill's compiler next to it in the skills folder. A ladder error names the network and points at the rung. (It also finds the compiler when the skills in `~/.claude/skills` are symlinks to repositories elsewhere; if it still says the skill isn't installed, put `<codesys-lad-dir>/scripts` on `PYTHONPATH`.)
+   Add `--lib references/lib_sigs/CXA_Motion_ML.st` (or your own declarations file) when rungs call library functions. The converter finds this skill's compiler next to it in the skills folder. A ladder error names the network and points at the rung. (It also finds the compiler when the skill folders are symlinks to repositories elsewhere; if it still says the skill isn't installed, put `<codesys-lad-dir>/scripts` on `PYTHONPATH`.)
    **Compiling and importing do not prove the editor can open the POU.** The editor paints networks that the compiler and the simulator accept happily; the one known case is a parallel group with a contact in front of it (see **Put a parallel group first in the rung** in `references/ladder.md`, which the compiler now fixes). When the user reports an editor error naming a network, count `NETWORK`s from 1 in the source and look at that rung's shape first.
    **A POU that no program calls is not compiled**, so an import "builds with 0 errors" even when its code is wrong. To really check library pins and types, call the program from `PLC_PRG` and build again.
 2. Read it back:
@@ -59,11 +59,7 @@ Put the source in `.st` files with the `END_...` keywords, as ctrlx-engineer des
    It prints each output as a boolean expression and warns about parallel branches the editor would rebuild in series. Check every coil against the intent.
 3. For a sequence, test it in the scan simulator, `scripts/ld_sim.py`. It also runs other FBs through Python models (fake axes, fake MC_ blocks), and reads struct members and library constants; see **Simulating FBs** in `references/ladder.md`. It reads enums, constants and initial values from the XML, runs the networks scan by scan with timers, and lets a script set inputs and assert on any variable. `references/examples/traffic_light/test_traffic.py` is a full test plan written that way; copy its shape. Validate against the PLCopen schema with ctrlx-engineer's `scripts/validate_plcopen.py`.
 4. Hand over the XML (Project → Import PLCopenXML…) with the ladder text, which is the readable form of the rungs, and list the build's warnings.
-5. **Loading it into ctrlX PLC Engineering.** The PLC Engineering REST API (ctrlx-engineer `scripts/plceng.py`, notes in its `references/plc-engineering-api.md`) can't create LD POUs ("Language type 'LD' is not supported"), and its import job reads files from the engineering PC's own disk. **When there's any ladder, the whole project goes in as the one XML from step 1:** don't push ST objects separately with `plceng.py push`. Run `plceng.py import-xml Project.xml`:
-   - When PLC Engineering runs on this machine, it imports directly. A localhost URL through an SSH tunnel doesn't count as this machine.
-   - When the user provides a shared folder, add `--shared <local-dir> <pc-dir>`.
-   - **Otherwise, prompt the user to load the export by hand** (Project → Import PLCopenXML…) and wait for their confirmation.
-   Then run `plceng.py build`, fix the errors and repeat until it compiles. With a manual import, ask the user to reimport after each fix.
+5. **Loading it into ctrlX PLC Engineering:** follow ctrlx-engineer's **Ladder can't be pushed** rule (SKILL.md, REST API section). In short, the whole project goes in as the one XML from step 1 through `plceng.py import-xml`, or by hand; never `plceng.py push` the ST objects separately. Then `plceng.py build`, fix and repeat. With a manual import, ask the user to reimport after each fix.
 
 ## ctrlX library and motion lookups
 
@@ -77,7 +73,7 @@ In ladder, the lookup gives you the pins of an FB call. Every library FB except 
 - `references/exports/ctrlx_math_compare.xml` and `ctrlx_other_operators.xml`: ctrlX PLC Engineering exports of ADD/SUB/MUL/DIV, all six compares, SEL, MUX, LIMIT and INT_TO_REAL. `ctrlx_function_calls.xml`: user function calls with and without EN/ENO, and `ML_AxsPower` with a VAR_IN_OUT. `scripts/ld_diff.py export.xml built.xml [POU]` compares LD bodies element by element; use it whenever you add a construct from a new export.
 - **Regression tests:** `tests/run.sh` rebuilds every example and feature test (`tests/features/`), validates them and runs the tracer check. It also runs:
   - the traffic-light test plan;
-  - the ladder `FB_AxisCtrl` test against fake MC_ models (`references/examples/press_tests/`);
+  - the ladder `FB_AxisCtrl` test against fake MC_ models (`references/examples/axisctrl_tests/`);
   - simulator checks of declaration forms, struct MOVE, FB models, math, SEL/MUX/LIMIT, conversions and case-insensitive names;
   - the `ExampleMath` and `OtherOperators` rebuilds, diffed element for element against the real ctrlX exports;
   - operand-count checks (including MUX's 98-input limit) and a check that `ld_diff` catches a difference.
