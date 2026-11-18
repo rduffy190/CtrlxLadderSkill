@@ -70,3 +70,6 @@ The tracer also works on ladder exported from CODESYS, which makes it handy for 
 ## License
 
 MIT, except `references/exports/codesys_v35sp15_ladder.xml`, which keeps its original Unlicense terms. See [LICENSE](LICENSE).
+
+Parts of this skill were generated and tested with Claude Opus 5.5 and Claude Sonnet 5.5, see [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md).
+
